@@ -39,7 +39,9 @@ fn serde_regression() {
     let fixture_root_dir = test::fixture_dir();
     find_fixture_files(&fixture_root_dir, |source_path, json_path| {
         // Parse the original fixture file
-        let data = fs::read(&source_path).unwrap();
+        let mut data = fs::read(&source_path).unwrap();
+        // Working copies on Windows are CRLF. The fixtures were written for LF.
+        data.retain(|byte| *byte != b'\r');
         let parser = parser::Builder::default().sanitize_content(false).build();
         let mut feed = parser.parse(data.as_slice()).unwrap();
 

@@ -14,7 +14,7 @@ fn test_example_1() {
     // Expected feed
     let entry0 = actual.entries.first().unwrap();
     let entry1 = actual.entries.get(1).unwrap();
-    let expected = Feed::new(FeedType::RSS1)
+    let mut expected = Feed::new(FeedType::RSS1)
         .id(actual.id.as_ref()) // not present in the test data
         .title(Text::new("Feed title".into()))
         .link(Link::new("http://www.example.com/main.html", None))
@@ -42,7 +42,7 @@ fn test_example_1() {
                 .author(Person::parse("記事2の作者名").role("creator")),
         );
 
-    // Check
+    test::copy_extensions(&actual, &mut expected);
     assert_eq!(actual, expected);
 }
 
@@ -78,7 +78,7 @@ fn test_spec_1() {
     // Expected feed
     let entry0 = actual.entries.first().unwrap();
     let entry1 = actual.entries.get(1).unwrap();
-    let expected = Feed::new(FeedType::RSS1)
+    let mut expected = Feed::new(FeedType::RSS1)
         .id(actual.id.as_ref())     // not present in the test data
         .title(Text::new("XML.com".into()))
         .link(Link::new("http://xml.com/pub", None))
@@ -100,7 +100,7 @@ fn test_spec_1() {
             .link(Link::new("http://xml.com/pub/2000/08/09/rdfdb/index.html", None))
             .summary(Text::new("Tool and API support for the Resource Description Framework\n            is slowly coming of age. Edd Dumbill takes a look at RDFDB,\n            one of the most exciting new RDF toolkits.".into())));
 
-    // Check
+    test::copy_extensions(&actual, &mut expected);
     assert_eq!(actual, expected);
 }
 
@@ -113,7 +113,7 @@ fn test_spec_2() {
 
     // Expected feed
     let entry0 = actual.entries.first().unwrap();
-    let expected = Feed::new(FeedType::RSS1)
+    let mut expected = Feed::new(FeedType::RSS1)
         .id(actual.id.as_ref()) // not present in the test data
         .title(Text::new("Meerkat".into()))
         .link(Link::new("http://meerkat.oreillynet.com", None))
@@ -139,7 +139,7 @@ fn test_spec_2() {
                 .rights(Text::new("Copyright © 2000 O'Reilly & Associates, Inc.".into())),
         );
 
-    // Check
+    test::copy_extensions(&actual, &mut expected);
     assert_eq!(actual, expected);
 }
 

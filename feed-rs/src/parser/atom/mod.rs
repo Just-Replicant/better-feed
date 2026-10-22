@@ -4,6 +4,7 @@ use mediatype::{MediaTypeBuf, names};
 
 use crate::model::LinkTarget::CommentsFeed;
 use crate::model::{Category, Content, Entry, Feed, FeedType, Generator, Image, Link, Person, Text};
+use crate::parser::extension::capture;
 use crate::parser::util;
 use crate::parser::util::if_some_then;
 use crate::parser::{ParseErrorKind, ParseFeedError, ParseFeedResult};
@@ -49,8 +50,7 @@ pub(crate) fn parse_feed<R: BufRead>(parser: &Parser, root: Element<R>) -> Parse
 
             (NS::Atom, "entry") => if_some_then(handle_entry(parser, child)?, |entry| feed.entries.push(entry)),
 
-            // Nothing required for unknown elements
-            _ => {}
+            _ => feed.extensions.push(capture(child)?),
         }
     }
 
@@ -255,8 +255,7 @@ fn handle_entry<R: BufRead>(parser: &Parser, element: Element<R>) -> ParseFeedRe
             // Handle MediaRSS elements
             (NS::MediaRSS, _) => parser.mediarss.handle_entry_mediarss_element(child)?,
 
-            // Nothing required for unknown elements
-            _ => {}
+            _ => entry.extensions.push(capture(child)?),
         }
     }
 

@@ -1,6 +1,6 @@
 use std::io::{self, BufRead};
 
-use feed_rs::parser;
+use better_feed::parser;
 
 // Fetch each URL and try to parse it
 fn main() -> Result<(), Box<dyn std::error::Error>> {

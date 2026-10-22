@@ -1,8 +1,9 @@
 use std::io::BufRead;
 use std::time::Duration;
 
-use crate::model::{Category, Feed, Image, MediaCredit, MediaObject, MediaRating, MediaThumbnail, Person};
+use crate::model::{Category, Extension, Feed, Image, MediaCredit, MediaObject, MediaRating, MediaThumbnail, Person};
 use crate::parser::atom;
+use crate::parser::extension::capture;
 use crate::parser::util::{if_some_then, parse_npt};
 use crate::parser::{ParseFeedResult, common};
 use crate::xml::{Element, NS};
@@ -29,15 +30,14 @@ pub(crate) fn handle_itunes_channel_element<R: BufRead>(element: Element<R>, fee
         (NS::Itunes, "author") => if_some_then(element.child_as_text(), |person| feed.authors.push(Person::parse(&person).role("author"))),
         (NS::Itunes, "owner") => if_some_then(handle_owner(element)?, |owner| feed.contributors.push(owner)),
 
-        // Nothing required for unknown elements
-        _ => {}
+        _ => feed.extensions.push(capture(element)?),
     }
 
     Ok(())
 }
 
 // Process <itunes> elements at item level and turn them into something that looks like MediaRSS objects.
-pub(crate) fn handle_itunes_item_element<R: BufRead>(element: Element<R>, media_obj: &mut MediaObject) -> ParseFeedResult<()> {
+pub(crate) fn handle_itunes_item_element<R: BufRead>(element: Element<R>, media_obj: &mut MediaObject, extensions: &mut Vec<Extension>) -> ParseFeedResult<()> {
     match element.ns_and_tag() {
         (NS::Itunes, "title") => media_obj.title = atom::handle_text(element)?,
 
@@ -53,8 +53,7 @@ pub(crate) fn handle_itunes_item_element<R: BufRead>(element: Element<R>, media_
 
         (NS::Itunes, "season") => if_some_then(common::handle_season(element), |season| media_obj.season = Some(season)),
 
-        // Nothing required for unknown elements
-        _ => {}
+        _ => extensions.push(capture(element)?),
     }
 
     Ok(())

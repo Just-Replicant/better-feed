@@ -12,7 +12,7 @@ fn test_0_91_spec_1() {
     // Expected feed
     let entry0 = actual.entries.first().unwrap();
     let entry1 = actual.entries.get(1).unwrap();
-    let expected = Feed::new(FeedType::RSS0)
+    let mut expected = Feed::new(FeedType::RSS0)
         .id(actual.id.as_ref())     // not present in the test data
         .title(Text::new("WriteTheWeb".into()))
         .link(Link::new("http://writetheweb.com", None))
@@ -41,7 +41,7 @@ fn test_0_91_spec_1() {
             .id(entry1.id.as_ref())     // not in source data
             .updated(entry1.updated)); // not in source data
 
-    // Check
+    test::copy_extensions(&actual, &mut expected);
     assert_eq!(actual, expected);
 }
 
@@ -94,7 +94,7 @@ fn test_0_92_spec_1() {
     let entry0 = actual.entries.first().unwrap();
     let entry1 = actual.entries.get(1).unwrap();
     let entry2 = actual.entries.get(2).unwrap();
-    let expected = Feed::new(FeedType::RSS0)
+    let mut expected = Feed::new(FeedType::RSS0)
         .id(actual.id.as_ref())     // not present in the test data
         .title(Text::new("Dave Winer: Grateful Dead".into()))
         .link(Link::new("http://www.scripting.com/blog/categories/gratefulDead.html", None))
@@ -122,6 +122,6 @@ fn test_0_92_spec_1() {
             .id(entry2.id.as_ref())     // not in source data
             .updated(entry2.updated)); // not in source data
 
-    // Check
+    test::copy_extensions(&actual, &mut expected);
     assert_eq!(actual, expected);
 }

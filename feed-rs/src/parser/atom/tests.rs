@@ -13,7 +13,7 @@ fn test_example_1() {
     let actual = parser::parse(test_data.as_bytes()).unwrap();
 
     // Expected feed
-    let expected = Feed::new(FeedType::Atom)
+    let mut expected = Feed::new(FeedType::Atom)
         .title(Text::new("dive into mark".into()))
         .description(Text::new("A <em>lot</em> of effort\n        went into making this effortless".into()).content_type("text/html"))
         .updated_parsed("2005-07-31T12:29:29Z")
@@ -52,7 +52,7 @@ fn test_example_1() {
                 .published("2003-12-13T08:29:29-04:00"),
         );
 
-    // Check
+    test::copy_extensions(&actual, &mut expected);
     assert_eq!(actual, expected);
 }
 
@@ -63,7 +63,7 @@ fn test_example_2() {
     let test_data = test::fixture_as_string("atom/atom_example_2.xml");
     let actual = parser::parse(test_data.as_bytes()).unwrap();
 
-    let expected = Feed::new(FeedType::Atom)
+    let mut expected = Feed::new(FeedType::Atom)
         .id("tag:theregister.co.uk,2005:feed/theregister.co.uk/science/")
         .language("en")
         .title(Text::new("The Register - Science".into()))
@@ -109,7 +109,7 @@ fn test_example_2() {
             .summary(Text::new(r#"<h4>After all, what could possibly go wrong, apart from everything?</h4> <p>France is threatening to stick submachine guns on its next generation of satellites as part of an "active space defense" strategy that would enable it to shoot down other space hardware.…</p>"#.to_owned())
                 .content_type("text/html")));
 
-    // Check
+    test::copy_extensions(&actual, &mut expected);
     assert_eq!(actual, expected);
 }
 
@@ -122,7 +122,7 @@ fn test_example_3() {
     let p = parser::Builder::new().sanitize_content(false).build();
     let actual = p.parse(test_data.as_bytes()).unwrap();
 
-    let expected = Feed::new(FeedType::Atom)
+    let mut expected = Feed::new(FeedType::Atom)
         .title(Text::new("The Akamai Blog".into()))
         .link(Link::new("https://blogs.akamai.com/", None)
             .rel("alternate")
@@ -161,7 +161,7 @@ fn test_example_3() {
         <img src="http://feeds.feedburner.com/~r/TheAkamaiBlog/~4/NnQEuqRSyug" height="1" width="1" alt=""/>"#)
                 .content_type("text/html")));
 
-    // Check
+    test::copy_extensions(&actual, &mut expected);
     assert_eq!(actual, expected);
 }
 
@@ -174,7 +174,7 @@ fn test_example_4() {
     let p = parser::Builder::new().sanitize_content(false).build();
     let actual = p.parse(test_data.as_bytes()).unwrap();
 
-    let expected = Feed::new(FeedType::Atom)
+    let mut expected = Feed::new(FeedType::Atom)
         .author(Person::parse("ebm-papst").role("author"))
         .link(Link::new("http://www.ebmpapst.com/en/ebmpapst_productnews_atom_feed.xml", None)
             .rel("self")
@@ -191,7 +191,7 @@ fn test_example_4() {
             .summary(Text::new(r#" <a href="https://idt.ebmpapst.com/de/en/idt/campaign/simatic-micro-drive.html"><img src="http://www.ebmpapst.com//media/content/homepage/currenttopic/ads_cd2013/FF_ep_keyvisual_100px.jpg" border="0" align="right"></a> Working in perfect harmony: the ebm-papst drive solutions for SIMATIC MICRO-DRIVE drive regulators from Siemens. "#.to_owned())
                 .content_type("text/html")));
 
-    // Check
+    test::copy_extensions(&actual, &mut expected);
     assert_eq!(actual, expected);
 }
 
@@ -204,7 +204,7 @@ fn test_example_5() {
     let p = parser::Builder::new().sanitize_content(false).build();
     let actual = p.parse(test_data.as_bytes()).unwrap();
 
-    let expected = Feed::new(FeedType::Atom)
+    let mut expected = Feed::new(FeedType::Atom)
         .title(Text::new("USGS Magnitude 2.5+ Earthquakes, Past Hour".into()))
         .updated_parsed("2019-07-31T13:17:27Z")
         .author(Person::parse("U.S. Geological Survey")
@@ -233,7 +233,7 @@ fn test_example_5() {
             .category(Category::new("nc")
                 .label("Author")));
 
-    // Check
+    test::copy_extensions(&actual, &mut expected);
     assert_eq!(actual, expected);
 }
 
@@ -244,7 +244,7 @@ fn test_example_6() {
     let test_data = test::fixture_as_string("atom/atom_example_6.xml");
     let actual = parser::parse(test_data.as_bytes()).unwrap();
 
-    let expected = Feed::new(FeedType::Atom)
+    let mut expected = Feed::new(FeedType::Atom)
         .id("tag:github.com,2008:https://github.com/feed-rs/feed-rs/releases")
         .language("en-US")
         .link(
@@ -299,7 +299,7 @@ fn test_example_6() {
                 .author(Person::parse("kumabook").role("author")),
         );
 
-    // Check
+    test::copy_extensions(&actual, &mut expected);
     assert_eq!(actual, expected);
 }
 
@@ -342,7 +342,7 @@ fn test_spec_1() {
     let actual = parser::parse(test_data.as_bytes()).unwrap();
 
     // Expected feed
-    let expected = Feed::new(FeedType::Atom)
+    let mut expected = Feed::new(FeedType::Atom)
         .id("urn:uuid:60a76c80-d399-11d9-b93C-0003939e0af6")
         .title(Text::new("Example Feed".into()))
         .link(Link::new("http://example.org/", None).rel("alternate"))
@@ -357,7 +357,7 @@ fn test_spec_1() {
                 .link(Link::new("http://example.org/2003/12/13/atom03", None).rel("alternate")),
         );
 
-    // Check
+    test::copy_extensions(&actual, &mut expected);
     assert_eq!(actual, expected);
 }
 
@@ -401,7 +401,7 @@ fn test_pub_spec_1() {
     let actual = parser::parse(test_data.as_bytes()).unwrap().id(""); // Clear randomly generated UUID
 
     // Expected feed
-    let expected = Feed::new(FeedType::Atom).entry(
+    let mut expected = Feed::new(FeedType::Atom).entry(
         Entry::default()
             .title(Text::new("Atom-Powered Robots Run Amok".into()))
             .id("urn:uuid:1225c695-cfb8-4ebb-aaaa-80da344efa6a")
@@ -410,7 +410,7 @@ fn test_pub_spec_1() {
             .content(Content::default().content_type("text/plain").body("Some text.")),
     );
 
-    // Check
+    test::copy_extensions(&actual, &mut expected);
     assert_eq!(actual, expected);
 }
 
@@ -420,7 +420,7 @@ fn test_entry() {
     let test_data = test::fixture_as_string("atom/atom_entry_1.xml");
     let actual = parser::parse(test_data.as_bytes()).unwrap().id("");
 
-    let expected = Feed::new(FeedType::Atom).entry(
+    let mut expected = Feed::new(FeedType::Atom).entry(
         Entry::default()
             .title(Text::new("Specifications".into()))
             .id("urn:uuid:988EF5C55CDEA24EDE1251744888912")
@@ -438,7 +438,7 @@ fn test_entry() {
             )),
     );
 
-    // Check
+    test::copy_extensions(&actual, &mut expected);
     assert_eq!(actual, expected);
 }
 

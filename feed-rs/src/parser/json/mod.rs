@@ -2,7 +2,10 @@ use std::io::Read;
 
 use mediatype::{MediaTypeBuf, names};
 
+use serde_json::{Map, Value};
+
 use crate::model::{Category, Content, Entry, Feed, FeedType, Image, Link, Person, Text};
+use crate::parser::extension::from_json;
 use crate::parser::util::if_some_then;
 use crate::parser::{ParseFeedError, ParseFeedResult, Parser};
 
@@ -45,6 +48,8 @@ fn convert(parser: &Parser, jf: JsonFeed) -> ParseFeedResult<Feed> {
     if_some_then(jf.favicon, |uri| feed.icon = Some(Image::new(uri)));
 
     handle_authors(&mut feed.authors, &jf.author, &jf.authors);
+
+    feed.extensions = from_json(jf.extensions);
 
     // Convert items within the JSON feed
     jf.items.into_iter().for_each(|ji| {
@@ -150,6 +155,8 @@ fn handle_item(parser: &Parser, ji: JsonItem) -> Entry {
         attachments.into_iter().map(handle_attachment).for_each(|link| entry.links.push(link))
     });
 
+    entry.extensions = from_json(ji.extensions);
+
     entry
 }
 
@@ -166,6 +173,8 @@ struct JsonFeed {
     pub author: Option<JsonAuthor>,
     pub authors: Option<Vec<JsonAuthor>>,
     pub items: Vec<JsonItem>,
+    #[serde(default, flatten)]
+    extensions: Map<String, Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -197,4 +206,6 @@ struct JsonItem {
     pub authors: Option<Vec<JsonAuthor>>,
     pub tags: Option<Vec<String>>,
     pub attachments: Option<Vec<JsonAttachment>>,
+    #[serde(default, flatten)]
+    extensions: Map<String, Value>,
 }

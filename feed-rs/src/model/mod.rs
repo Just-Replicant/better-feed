@@ -29,12 +29,7 @@ use crate::parser::{ParseErrorKind, ParseFeedError, util};
 /// [iTunes podcast spec]: https://help.apple.com/itc/podcasts_connect/#/itcb54353390
 /// [iTunes podcast guide]: https://www.feedforall.com/itune-tutorial-tags.htm
 ///
-/// Certain elements are not mapped given their limited utility:
-///   * RSS 2:
-///     * channel - docs (pointer to the spec), cloud (for callbacks), textInput (text box e.g. for search)
-///     * item - source (pointer to the channel, but our data model links items to a channel)
-///   * RSS 1:
-///     * channel - rdf:about attribute (pointer to feed), textinput (text box e.g. for search)
+/// Elements without a dedicated field are kept on [`Feed::extensions`] or [`Entry::extensions`].
 #[derive(Clone, Deserialize, PartialEq, Serialize)]
 pub struct Feed {
     /// Type of this feed (e.g. RSS2, Atom etc)
@@ -109,6 +104,9 @@ pub struct Feed {
     /// * Atom (optional): Individual entries within the feed (e.g. a blog post)
     /// * RSS 1+2 (optional): Individual items within the channel.
     pub entries: Vec<Entry>,
+    /// Tags this parser does not map onto a dedicated field.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extensions: Vec<Extension>,
 }
 
 impl Feed {
@@ -133,6 +131,7 @@ impl Feed {
             ttl: None,
             people: Vec::new(),
             entries: Vec::new(),
+            extensions: Vec::new(),
         }
     }
 }
@@ -316,6 +315,9 @@ pub struct Entry {
     /// Atom (optional): The base url specified on the item to resolve any relative
     /// references found within the scope on the item
     pub base: Option<String>,
+    /// Tags this parser does not map onto a dedicated field.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extensions: Vec<Extension>,
 }
 
 impl Default for Entry {
@@ -336,8 +338,32 @@ impl Default for Entry {
             media: Vec::new(),
             language: None,
             base: None,
+            extensions: Vec::new(),
         }
     }
+}
+
+/// An element that has no dedicated field on [`Feed`] or [`Entry`].
+///
+/// `namespace` is the XML namespace URI. JSON Feed leftovers use `https://jsonfeed.org`.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct Extension {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub namespace: Option<String>,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attributes: Vec<ExtensionAttribute>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub children: Vec<Extension>,
+}
+
+/// One attribute on an [`Extension`].
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct ExtensionAttribute {
+    pub name: String,
+    pub value: String,
 }
 
 #[cfg(test)]

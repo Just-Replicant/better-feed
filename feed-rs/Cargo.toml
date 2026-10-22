@@ -1,5 +1,5 @@
 [package]
-name = "feed-rs"
+name = "better-feed"
 version = "3.0.0"
 edition = '2024'
 authors = ["Mark Pritchard <mpritcha@gmail.com>"]
@@ -11,15 +11,12 @@ include = [
     "fixture/*"
 ]
 license = "MIT"
-homepage = "https://github.com/feed-rs/feed-rs"
-repository = "https://github.com/feed-rs/feed-rs.git"
+homepage = "https://github.com/Just-Replicant/better-feed"
+repository = "https://github.com/Just-Replicant/better-feed.git"
 description = "A feed parser that handles Atom, RSS 2.0, RSS 1.0, RSS 0.x and JSON Feed"
 keywords = ["rss", "atom", "json", "jsonfeed", "parser"]
 categories = ["parser-implementations"]
 readme = "README.md"
-
-[badges]
-travis-ci = { repository = "feed-rs/feed-rs", branch = "master" }
 
 [dependencies]
 ammonia = { version = "4.2.0", optional = true }

@@ -10,7 +10,7 @@ fn test_example_1() {
     let actual = parser::parse(test_data.as_bytes()).unwrap();
 
     // Expected feed
-    let expected = Feed::new(FeedType::JSON)
+    let mut expected = Feed::new(FeedType::JSON)
         .id(&actual.id)                 // not in test content
         .updated(actual.updated)        // not in test content
         .title(Text::new("Daring Fireball".into()))
@@ -46,7 +46,7 @@ fn test_example_1() {
                 .content_type("text/html")
                 .length(41)));
 
-    // Check
+    test::copy_extensions(&actual, &mut expected);
     assert_eq!(actual, expected);
 }
 
@@ -60,7 +60,7 @@ fn test_spec_1() {
     let actual = p.parse(test_data.as_bytes()).unwrap();
 
     // Expected feed
-    let expected = Feed::new(FeedType::JSON)
+    let mut expected = Feed::new(FeedType::JSON)
         .id(&actual.id)                 // not in test content
         .updated(actual.updated)        // not in test content
         .title(Text::new("JSON Feed".into()))
@@ -85,7 +85,7 @@ fn test_spec_1() {
                 .content_type("text/html")
                 .length(518)));
 
-    // Check
+    test::copy_extensions(&actual, &mut expected);
     assert_eq!(actual, expected);
 }
 
@@ -144,4 +144,20 @@ fn test_elastic_v1_1() {
         entry.authors,
         vec!(Person::parse("Fake Author 3").role("author"), Person::parse("Fake Author 4").role("author"))
     );
+}
+
+#[test]
+fn test_unknown_keys_are_kept() {
+    let json = r#"{
+      "version": "https://jsonfeed.org/version/1.1",
+      "title": "Example",
+      "user_comment": "hello",
+      "items": [{ "id": "1", "image": "https://example.com/a.png" }]
+    }"#;
+    let feed = parser::parse(json.as_bytes()).unwrap();
+    assert_eq!(feed.extensions[0].name, "user_comment");
+    assert_eq!(feed.extensions[0].namespace.as_deref(), Some("https://jsonfeed.org"));
+    assert_eq!(feed.extensions[0].text.as_deref(), Some("hello"));
+    assert_eq!(feed.entries[0].extensions[0].name, "image");
+    assert_eq!(feed.entries[0].extensions[0].text.as_deref(), Some("https://example.com/a.png"));
 }

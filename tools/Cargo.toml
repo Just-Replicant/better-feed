@@ -3,7 +3,7 @@ name = "tools"
 version = "0.1.0"
 edition = "2021"
 authors = ["Mark Pritchard <mpritcha@gmail.com>"]
-publish = false
+publish = true
 
 [dependencies]
 better-feed = { path = "../feed-rs" }

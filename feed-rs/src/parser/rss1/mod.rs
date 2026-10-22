@@ -1,6 +1,7 @@
 use std::io::BufRead;
 
 use crate::model::{Content, Entry, Feed, FeedType, Image, Link, Person, Text};
+use crate::parser::extension::capture;
 use crate::parser::util::if_some_then;
 use crate::parser::{ParseFeedResult, Parser, common};
 use crate::xml::{Element, NS};
@@ -21,8 +22,7 @@ pub(crate) fn parse<R: BufRead>(parser: &Parser, root: Element<R>) -> ParseFeedR
 
             (NS::RSS, "item") => if_some_then(handle_item(parser, child)?, |entry| feed.entries.push(entry)),
 
-            // Nothing required for unknown elements
-            _ => {}
+            _ => feed.extensions.push(capture(child)?),
         }
     }
 
@@ -48,8 +48,7 @@ fn handle_channel<R: BufRead>(parser: &Parser, feed: &mut Feed, channel: Element
 
             (NS::DublinCore, "rights") => feed.rights = common::handle_text(child),
 
-            // Nothing required for unknown elements
-            _ => {}
+            _ => feed.extensions.push(capture(child)?),
         }
     }
 
@@ -106,8 +105,7 @@ fn handle_item<R: BufRead>(parser: &Parser, element: Element<R>) -> ParseFeedRes
 
             (NS::DublinCore, "rights") => entry.rights = common::handle_text(child),
 
-            // Nothing required for unknown elements
-            _ => {}
+            _ => entry.extensions.push(capture(child)?),
         }
     }
 

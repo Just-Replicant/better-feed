@@ -1,5 +1,5 @@
 #[allow(unused_imports)]
-use feed_rs::parser;
+use better_feed::parser;
 
 // Bad input adapted from Python's feedparser library: https://github.com/kurtmckee/feedparser
 

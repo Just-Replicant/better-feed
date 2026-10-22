@@ -1,4 +1,4 @@
-#![doc(html_root_url = "https://docs.rs/feed-rs/")]
+#![doc(html_root_url = "https://docs.rs/better-feed/")]
 //! This crate provides a parser and common data model over Atom, RSS and JSON Feed content.
 //!
 //! The parser will automatically detect the type of content (XML vs. JSON) and the feed format (Atom vs. RSS).
@@ -17,7 +17,7 @@
 //! For example, to process a string:
 //!
 //! ```rust,no_run
-//! use feed_rs::parser;
+//! use better_feed::parser;
 //!
 //! let example_rss = r#"<?xml version="1.0" encoding="UTF-8" ?>
 //!   <rss version="2.0">
@@ -48,7 +48,7 @@
 //! ```rust,no_run
 //! use std::fs::File;
 //! use std::io::BufReader;
-//! use feed_rs::parser;
+//! use better_feed::parser;
 //!
 //! let file = File::open("example.xml").unwrap();
 //! let feed = parser::parse(BufReader::new(file)).unwrap();
@@ -62,7 +62,7 @@
 //! ```rust,no_run
 //! use std::fs::File;
 //! use std::io::BufReader;
-//! use feed_rs::parser;
+//! use better_feed::parser;
 //!
 //! let file = File::open("example.xml").unwrap();
 //! let parser = parser::Builder::new()

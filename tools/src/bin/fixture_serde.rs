@@ -8,7 +8,7 @@ fn main() {
     fixture_root_dir.push("../feed-rs/fixture");
 
     find_fixture_files(&fixture_root_dir, |entry| {
-        let parser = feed_rs::parser::Builder::new().build();
+        let parser = better_feed::parser::Builder::new().build();
 
         let path = entry.path();
         println!("Processing {}", path.display());

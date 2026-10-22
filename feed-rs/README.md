@@ -1,12 +1,11 @@
-# feed-rs
+# better-feed
 
-[![Build Status](https://travis-ci.org/feed-rs/feed-rs.svg?branch=master)](https://travis-ci.org/feed-rs/feed-rs.svg?branch=master)
-[![Crates.io Status](https://img.shields.io/crates/v/feed-rs.svg)](https://crates.io/crates/feed-rs)
+[![Crates.io Status](https://img.shields.io/crates/v/better-feed.svg)](https://crates.io/crates/better-feed)
 
 Library for parsing various forms of feeds such as Atom, RSS and JSON Feed.
 It also supports extensions such as iTunes, Dublin Core and Media RSS and serialisation/deserialisation via serde.
 
-[Documentation](https://docs.rs/feed-rs/)
+[Documentation](https://docs.rs/better-feed/)
 
 ## Usage
 
@@ -14,7 +13,7 @@ Add the dependency to your `Cargo.toml`.
 
 ```toml
 [dependencies]
-feed-rs = "3.0.0"
+better-feed = "3.0.0"
 ```
 
 To automatically sanitize parsed HTML content, use the `sanitize` feature. Note
@@ -27,7 +26,7 @@ rendered as HTML.
 A feed can be parsed from any object that implements the `Read` trait.
 
 ```rust
-use feed_rs::parser;
+use better_feed::parser;
 let xml = r#"
 <feed>
    <title type="text">sample feed</title>
@@ -45,7 +44,7 @@ let feed = parser::parse(xml.as_bytes()).unwrap();
 The parser will automatically detect XML vs. JSON so parsing JSON Feed content works the same way.
 
 ```rust
-use feed_rs::parser;
+use better_feed::parser;
 let json = r#"
 {
   "version": "https://jsonfeed.org/version/1",

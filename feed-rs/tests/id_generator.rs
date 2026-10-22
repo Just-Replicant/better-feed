@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use feed_rs::parser;
+use better_feed::parser;
 
 // Verify we can generate IDs that are compatible with v0.2
 #[test]

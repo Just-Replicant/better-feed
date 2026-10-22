@@ -210,6 +210,7 @@ impl<R: BufRead> ElementSource<R> {
                     name,
                     attributes,
                     namespace,
+                    namespace_uri,
                 } => {
                     // Starting an element increases our depth
                     state.current_depth += 1;
@@ -221,6 +222,7 @@ impl<R: BufRead> ElementSource<R> {
                     if state.current_depth == iter_depth {
                         let element = Element {
                             namespace: namespace.unwrap_or(state.default_namespace),
+                            namespace_uri,
                             name,
                             attributes,
                             xml_base: ElementSource::xml_base_fetch(&state),
@@ -392,13 +394,15 @@ impl<R: BufRead> SourceState<R> {
                     // Parse the namespace
                     // The default namespace is applied when the event is consumed, since it may not be known yet
                     // (e.g. the root element is examined to determine the feed type, which in turn sets the default namespace)
-                    let namespace = match ns_resolution {
-                        ResolveResult::Bound(ns) => Some(NS::parse(ns.as_ref())),
-                        ResolveResult::Unknown(_) => None,
-                        ResolveResult::Unbound => None,
+                    let (namespace, namespace_uri) = match ns_resolution {
+                        ResolveResult::Bound(ns) => {
+                            let uri = ns.as_ref();
+                            (Some(NS::parse(uri)), Some(uri.to_owned()))
+                        }
+                        ResolveResult::Unknown(_) | ResolveResult::Unbound => (None, None),
                     };
 
-                    let start = XmlEvent::start(namespace, e, reader);
+                    let start = XmlEvent::start(namespace, namespace_uri, e, reader);
                     return match text.take() {
                         Some(text) => {
                             self.pending_text = Some(start);
@@ -485,6 +489,9 @@ pub(crate) struct Element<'a, R: BufRead> {
 
     /// The namespace mapping at this point of the document.
     pub namespace: NS,
+
+    /// Namespace URI, when the tag declared one. `NS::Unknown` still carries this.
+    pub namespace_uri: Option<String>,
 
     /// A list of attributes associated with the element.
     pub attributes: Vec<NameValue>,
@@ -612,7 +619,7 @@ impl NS {
             "https://podcastindex.org/namespace/1.0" => NS::Podcast,
             "http://wellformedweb.org/CommentAPI/" => NS::WellFormedWebComments,
 
-            // Everything else is ignored
+            // Everything else stays addressable via Element::namespace_uri
             _ => NS::Unknown,
         }
     }
@@ -677,6 +684,7 @@ enum XmlEvent {
     Start {
         buffer_pos: u64,
         namespace: Option<NS>,
+        namespace_uri: Option<String>,
         name: String,
         attributes: Vec<NameValue>,
     },
@@ -703,7 +711,7 @@ impl XmlEvent {
     }
 
     // Creates a new event corresponding to an XML start-tag
-    fn start<R: BufRead>(namespace: Option<NS>, event: &BytesStart, reader: &Reader<R>) -> XmlEvent {
+    fn start<R: BufRead>(namespace: Option<NS>, namespace_uri: Option<String>, event: &BytesStart, reader: &Reader<R>) -> XmlEvent {
         let buffer_pos = reader.buffer_position();
         // Parse the name
         let name = XmlEvent::parse_name(event.name().as_ref());
@@ -729,6 +737,7 @@ impl XmlEvent {
         XmlEvent::Start {
             buffer_pos,
             namespace,
+            namespace_uri,
             name,
             attributes,
         }

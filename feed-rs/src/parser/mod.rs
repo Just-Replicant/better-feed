@@ -13,6 +13,7 @@ use siphasher::sip128::{Hasher128, SipHasher};
 
 mod atom;
 mod common;
+mod extension;
 mod itunes;
 mod json;
 mod mediarss;

@@ -124,15 +124,15 @@ impl Parser {
     ///
     /// * `input` - A source of content such as a string, file etc.
     ///
-    /// NOTE: feed-rs uses the encoding attribute in the XML prolog to decode content.
+    /// NOTE: better-feed uses the encoding attribute in the XML prolog to decode content.
     /// HTTP libraries (such as reqwest) provide a `text()` method which applies the content-encoding header and decodes the source into UTF-8.
-    /// This then causes feed-rs to fail when it attempts to interpret the UTF-8 stream as a different character set.
-    /// Instead, pass the raw, encoded source to feed-rs e.g. the `.bytes()` method if using reqwest.
+    /// This then causes better-feed to fail when it attempts to interpret the UTF-8 stream as a different character set.
+    /// Instead, pass the raw, encoded source to better-feed e.g. the `.bytes()` method if using reqwest.
     ///
     /// # Examples
     ///
     /// ```
-    /// use feed_rs::parser;
+    /// use better_feed::parser;
     /// let xml = r#"
     /// <feed>
     ///    <title type="text">sample feed</title>

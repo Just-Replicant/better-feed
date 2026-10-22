@@ -17,7 +17,7 @@ fn test_example_1() {
     let actual = parser::parse(test_data.as_bytes()).unwrap();
 
     // Expected feed
-    let expected = Feed::new(FeedType::RSS2)
+    let mut expected = Feed::new(FeedType::RSS2)
         .id(actual.id.as_ref()) // not present in the test data
         .title(Text::new("RSS Title".into()))
         .description(Text::new("This is an example of an RSS feed".into()))
@@ -35,7 +35,7 @@ fn test_example_1() {
                 .updated_parsed("Sun, 06 Sep 2009 16:20:00 +0000"),
         ); // copy from feed
 
-    // Check
+    test::copy_extensions(&actual, &mut expected);
     assert_eq!(actual, expected);
 }
 
@@ -47,7 +47,7 @@ fn test_example_2() {
     let actual = parser::parse(test_data.as_bytes()).unwrap();
 
     // Expected feed
-    let expected: Feed = Feed::new(FeedType::RSS2)
+    let mut expected: Feed = Feed::new(FeedType::RSS2)
         .id(actual.id.as_ref())     // not present in the test data
         .updated(actual.updated)    // not present in the test data
         .title(Text::new("NASA Breaking News".into()))
@@ -74,7 +74,7 @@ fn test_example_2() {
                     .content_type("image/jpeg")
                     .size(892854))));
 
-    // Check
+    test::copy_extensions(&actual, &mut expected);
     assert_eq!(actual, expected);
 }
 
@@ -86,7 +86,7 @@ fn test_example_3() {
     let actual = parser::parse(test_data.as_bytes()).unwrap();
 
     // Expected feed
-    let expected = Feed::new(FeedType::RSS2)
+    let mut expected = Feed::new(FeedType::RSS2)
         .id(actual.id.as_ref())     // not present in the test data
         .title(Text::new("News, Politics, Opinion, Commentary, and Analysis".into()))
         .description(Text::new("In-depth reporting, commentary on breaking news, political analysis, and opinion from The New\n            Yorker.".into()))
@@ -108,7 +108,7 @@ fn test_example_3() {
             .updated_parsed("Fri, 02 Aug 2019 15:35:34 +0000")
         );
 
-    // Check
+    test::copy_extensions(&actual, &mut expected);
     assert_eq!(actual, expected);
 }
 
@@ -122,7 +122,7 @@ fn test_example_4() {
     let actual = p.parse(test_data.as_bytes()).unwrap();
 
     // Expected feed
-    let expected = Feed::new(FeedType::RSS2)
+    let mut expected = Feed::new(FeedType::RSS2)
         .id(actual.id.as_ref())     // not present in the test data
         .title(Text::new("Earthquakes today".into()))
         .link(Link::new("http://www.earthquakenewstoday.com/feed/", None)
@@ -150,7 +150,7 @@ fn test_example_4() {
                 .content_type("text/html"))
             .updated(actual.updated));
 
-    // Check
+    test::copy_extensions(&actual, &mut expected);
     assert_eq!(actual, expected);
 }
 
@@ -162,7 +162,7 @@ fn test_example_5() {
     let actual = parser::parse(test_data.as_bytes()).unwrap();
 
     // Expected feed
-    let expected = Feed::new(FeedType::RSS2)
+    let mut expected = Feed::new(FeedType::RSS2)
         .id(actual.id.as_ref()) // not present in the test data
         .title(Text::new("Ars Technica".into()))
         .link(Link::new("https://arstechnica.com", None))
@@ -207,7 +207,7 @@ fn test_example_5() {
                 ),
         );
 
-    // Check
+    test::copy_extensions(&actual, &mut expected);
     assert_eq!(actual, expected);
 }
 
@@ -221,7 +221,7 @@ fn test_example_6() {
     let actual = p.parse(test_data.as_bytes()).unwrap();
 
     // Expected feed
-    let expected = Feed::new(FeedType::RSS2)
+    let mut expected = Feed::new(FeedType::RSS2)
         .id("b2ef47d837e6c0d9d757e14852e5bde")     // hash of the link
         .title(Text::new("Latest Movie Trailers".into()))
         .link(Link::new("https://trailers.apple.com/", None))
@@ -241,7 +241,7 @@ fn test_example_6() {
             .updated_parsed("2020-02-06T08:00:00Z")
             .id("73226f21f249d758bd97a1fac90897d2")); // hash of the link
 
-    // Check
+    test::copy_extensions(&actual, &mut expected);
     assert_eq!(actual, expected);
 }
 
@@ -268,7 +268,7 @@ fn test_spec_1() {
     let actual = p.parse(test_data.as_bytes()).unwrap();
 
     // Expected feed
-    let expected = Feed::new(FeedType::RSS2)
+    let mut expected = Feed::new(FeedType::RSS2)
         .id(actual.id.as_ref()) // not present in the test data
         .title(Text::new("Scripting News".into()))
         .link(Link::new("http://www.scripting.com/", None))
@@ -307,7 +307,7 @@ fn test_spec_1() {
                 .id("http://scriptingnews.userland.com/backissues/2002/09/29#When:6:52:02PM"),
         ); // copy from feed
 
-    // Check
+    test::copy_extensions(&actual, &mut expected);
     assert_eq!(actual, expected);
 }
 
@@ -362,7 +362,7 @@ fn test_spiegel() {
     let actual = p.parse(test_data.as_bytes()).unwrap();
 
     // Expected feed
-    let expected = Feed::new(FeedType::RSS2)
+    let mut expected = Feed::new(FeedType::RSS2)
         .id(actual.id.as_ref()) // not present in the test data
         .language("de")
         .title(Text::new("SPIEGEL Update – Die Nachrichten".into()))
@@ -415,12 +415,11 @@ fn test_spiegel() {
                 )
         );
 
-    // Check
+    test::copy_extensions(&actual, &mut expected);
     assert_eq!(actual, expected);
 }
 
-// Check that we ignore tags in unknown namespaces
-// In the case of this feed, we ignore googleplay, and don't overwrite the RSS2 image
+// Unknown namespaces are kept on extensions and do not replace the RSS2 image
 #[test]
 fn test_spreaker_ignore_unknown_ns() {
     let test_data = test::fixture_as_raw("rss2/rss_2.0_spreaker.xml");
@@ -438,7 +437,7 @@ fn test_bbc() {
     let actual = parser::parse(test_data.as_bytes()).unwrap();
 
     // Expected feed
-    let expected = Feed::new(FeedType::RSS2)
+    let mut expected = Feed::new(FeedType::RSS2)
         .id(actual.id.as_ref()) // not present in the test data
         .title(Text::new("In Our Time".into()))
         .link(Link::new("http://www.bbc.co.uk/programmes/b006qykl", None))
@@ -483,7 +482,7 @@ fn test_bbc() {
                 ),
         );
 
-    // Check
+    test::copy_extensions(&actual, &mut expected);
     assert_eq!(actual, expected);
 }
 
@@ -497,7 +496,7 @@ fn test_ch9() {
     let actual = p.parse(test_data.as_bytes()).unwrap();
 
     // Expected feed
-    let expected = Feed::new(FeedType::RSS2)
+    let mut expected = Feed::new(FeedType::RSS2)
         .id(actual.id.as_ref()) // not present in the test data
         .title(Text::new("Azure Friday (HD) - Channel 9".into()))
         .logo(
@@ -603,7 +602,7 @@ fn test_ch9() {
                 ),
         );
 
-    // Check
+    test::copy_extensions(&actual, &mut expected);
     assert_eq!(actual, expected);
 }
 
@@ -979,4 +978,26 @@ fn test_volpeon_hybrid_rss_atom() {
     assert_eq!(entry0.updated, Some(Utc.with_ymd_and_hms(2025, 03, 29, 0, 0, 0).unwrap()));
     let entry1 = &actual.entries[1];
     assert_eq!(entry1.updated, Some(Utc.with_ymd_and_hms(2024, 7, 1, 0, 0, 0).unwrap()));
+}
+
+#[test]
+fn test_unknown_namespace_is_kept() {
+    let xml = r#"<?xml version="1.0" encoding="UTF-8" ?>
+        <rss version="2.0" xmlns:nyaa="https://nyaa.si/xmlns/nyaa">
+          <channel>
+            <title>Nyaa</title>
+            <link>https://nyaa.si/</link>
+            <description>torrents</description>
+            <item>
+              <title>Example</title>
+              <link>https://nyaa.si/download/1.torrent</link>
+              <guid>https://nyaa.si/view/1</guid>
+              <nyaa:seeders>4</nyaa:seeders>
+            </item>
+          </channel>
+        </rss>"#;
+    let feed = parser::parse(xml.as_bytes()).unwrap();
+    let seeders = feed.entries[0].extensions.iter().find(|ext| ext.name == "seeders").unwrap();
+    assert_eq!(seeders.namespace.as_deref(), Some("https://nyaa.si/xmlns/nyaa"));
+    assert_eq!(seeders.text.as_deref(), Some("4"));
 }

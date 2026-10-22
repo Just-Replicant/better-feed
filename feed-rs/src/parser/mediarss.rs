@@ -5,7 +5,10 @@ use std::time::Duration;
 
 use mediatype::{MediaTypeBuf, names};
 
-use crate::model::{Entry, Image, MediaCommunity, MediaContent, MediaCredit, MediaObject, MediaObjectSource, MediaRating, MediaText, MediaThumbnail, Text};
+use crate::model::{
+    Entry, Extension, Image, MediaCommunity, MediaContent, MediaCredit, MediaObject, MediaObjectSource, MediaRating, MediaText, MediaThumbnail, Text,
+};
+use crate::parser::extension::capture;
 use crate::parser::util::{if_ok_then_some, if_some_then, parse_npt};
 use crate::parser::{ParseErrorKind, ParseFeedError, ParseFeedResult, util};
 use crate::xml::{Element, NS};
@@ -29,6 +32,8 @@ struct Scope {
 
     // Children (i.e. <media:group> elements that nest MediaRSS content below them)
     children: Vec<Scope>,
+
+    extensions: Vec<Extension>,
 }
 
 impl MediaRssState {
@@ -69,6 +74,8 @@ impl MediaRssState {
 }
 
 fn emit_media_objects(mut scope: Scope, entry: &mut Entry) {
+    entry.extensions.append(&mut scope.extensions);
+
     // If we have content at this scope, then build a media object for it
     if !scope.pending.is_empty() {
         // Build a media object for this scope
@@ -140,8 +147,7 @@ fn inner_handle_mediarss_element<R: BufRead>(element: Element<R>, scope: &mut Sc
 
             (NS::MediaRSS, "rating") => scope.rating = handle_media_rating(element),
 
-            // Nothing required for unknown elements
-            _ => {}
+            _ => scope.extensions.push(capture(element)?),
         }
     }
 

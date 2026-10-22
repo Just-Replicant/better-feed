@@ -1,4 +1,5 @@
-use crate::model::{Feed, Group, MediaObject, PodcastPerson, Role, Transcript};
+use crate::model::{Extension, Feed, Group, MediaObject, PodcastPerson, Role, Transcript};
+use crate::parser::extension::capture;
 use crate::parser::util::{if_some_then, parse_uri};
 use crate::parser::{ParseFeedResult, common};
 use crate::xml::{Element, NS};
@@ -8,15 +9,20 @@ use url::Url;
 
 // Process <podcast> elements at channel level updating the Feed object as required
 pub(crate) fn handle_podcast_channel_element<R: BufRead>(element: Element<R>, feed: &mut Feed) -> ParseFeedResult<()> {
-    if let (NS::Podcast, "person") = element.ns_and_tag() {
-        if_some_then(handle_person(element)?, |person| feed.people.push(person))
+    match element.ns_and_tag() {
+        (NS::Podcast, "person") => if_some_then(handle_person(element)?, |person| feed.people.push(person)),
+        _ => feed.extensions.push(capture(element)?),
     }
 
     Ok(())
 }
 
 /// Process <podcast> elements at entry level updating the MediaObject as required
-pub(crate) fn handle_podcast_item_element<R: BufRead>(element: Element<R>, media_obj: &mut MediaObject) -> ParseFeedResult<()> {
+pub(crate) fn handle_podcast_item_element<R: BufRead>(
+    element: Element<R>,
+    media_obj: &mut MediaObject,
+    extensions: &mut Vec<Extension>,
+) -> ParseFeedResult<()> {
     match element.ns_and_tag() {
         (NS::Podcast, "person") => if_some_then(handle_person(element)?, |person| media_obj.people.push(person)),
 
@@ -26,8 +32,7 @@ pub(crate) fn handle_podcast_item_element<R: BufRead>(element: Element<R>, media
 
         (NS::Podcast, "transcript") => if_some_then(handle_transcript(element), |transcript| media_obj.transcripts.push(transcript)),
 
-        // skip unknown properties
-        _ => {}
+        _ => extensions.push(capture(element)?),
     }
 
     Ok(())

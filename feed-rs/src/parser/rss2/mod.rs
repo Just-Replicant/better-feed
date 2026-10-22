@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use std::io::BufRead;
 
 use crate::model::{Category, Content, Entry, Feed, FeedType, Generator, Image, Link, LinkTarget, MediaContent, MediaObject, MediaObjectSource, Person};
+use crate::parser::extension::capture;
 use crate::parser::itunes::{handle_itunes_channel_element, handle_itunes_item_element};
 use crate::parser::podcast::{handle_podcast_channel_element, handle_podcast_item_element};
 use crate::parser::util::{if_ok_then_some, if_some_then};
@@ -70,8 +71,7 @@ fn handle_channel<R: BufRead>(parser: &Parser, channel: Element<R>) -> ParseFeed
 
             (NS::Podcast, _) => handle_podcast_channel_element(child, &mut feed)?,
 
-            // Nothing required for unknown elements
-            _ => {}
+            _ => feed.extensions.push(capture(child)?),
         }
     }
 
@@ -237,13 +237,13 @@ fn handle_item<R: BufRead>(parser: &Parser, element: Element<R>) -> ParseFeedRes
             (NS::DublinCore, "creator") => if_some_then(child.child_as_text(), |name| entry.authors.push(Person::parse(&name).role("creator"))),
 
             // iTunes elements populate the corresponding MediaObject
-            (NS::Itunes, _) => handle_itunes_item_element(child, &mut itunes_media_obj)?,
+            (NS::Itunes, _) => handle_itunes_item_element(child, &mut itunes_media_obj, &mut entry.extensions)?,
 
             // MediaRSS tags that are not grouped are parsed into the default object
             (NS::MediaRSS, _) => parser.mediarss.handle_entry_mediarss_element(child)?,
 
             // Podcast elements populate the default MediaObject
-            (NS::Podcast, _) => handle_podcast_item_element(child, &mut podcast_media_obj)?,
+            (NS::Podcast, _) => handle_podcast_item_element(child, &mut podcast_media_obj, &mut entry.extensions)?,
 
             // Comments can use the Well Formed Web NS or the RSS comments element
             // According to https://validator.w3.org/feed/docs/warning/CommentRSS.html we need to support both
@@ -252,8 +252,7 @@ fn handle_item<R: BufRead>(parser: &Parser, element: Element<R>) -> ParseFeedRes
             }
             (NS::RSS, "comments") => if_some_then(common::handle_link(Some(LinkTarget::Comments), child), |link| entry.links.push(link)),
 
-            // Nothing required for unknown elements
-            _ => {}
+            _ => entry.extensions.push(capture(child)?),
         }
     }
 

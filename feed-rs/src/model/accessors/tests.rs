@@ -113,7 +113,7 @@ fn entry_accessors() {
     assert_eq!(entry.comment_count(), Some(42));
     assert_eq!(entry.geo_point(), None); // out of range latitude
     assert_eq!(
-        entry.source(),
+        entry.rss_source(),
         Some(Source {
             url: "http://other.example/rss.xml".into(),
             title: Some("Other feed".into())
@@ -142,7 +142,7 @@ fn entry_accessors() {
     // Absent extensions are None / empty rather than errors
     let plain = &feed.entries[1];
     assert_eq!(plain.comment_count(), None);
-    assert_eq!(plain.source(), None);
+    assert_eq!(plain.rss_source(), None);
     assert_eq!(plain.itunes_explicit(), None);
     assert!(plain.podcast_soundbites().is_empty());
 }

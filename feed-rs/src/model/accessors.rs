@@ -324,7 +324,10 @@ impl Entry {
     }
 
     /// RSS 2.0 `<source url="...">title</source>`.
-    pub fn source(&self) -> Option<Source> {
+    ///
+    /// (Named `rss_source` to avoid confusion with the [`Entry::source`] field, which is reserved for the Atom
+    /// `<source>` element.)
+    pub fn rss_source(&self) -> Option<Source> {
         let e = self.extension(None, "source")?;
         Some(Source {
             url: e.attr("url")?.trim().to_string(),

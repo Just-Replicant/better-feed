@@ -9,16 +9,16 @@ use url::Url;
 use crate::model::{Category, Content, Entry, Feed, FeedType, Image, Link, MediaObject, MediaThumbnail, Person, Text};
 use crate::parser::extension::{CaptureConfig, from_json};
 use crate::parser::util::{self, if_some_then};
-use crate::parser::{ParseFeedError, ParseFeedResult, Parser};
+use crate::parser::{EntrySink, ParseFeedError, ParseFeedResult, Parser};
 
 #[cfg(test)]
 mod tests;
 
 /// Parses a JSON feed into our model
-pub(crate) fn parse<R: Read>(parser: &Parser, stream: R) -> ParseFeedResult<Feed> {
+pub(crate) fn parse<R: Read>(parser: &Parser, stream: R, sink: &mut EntrySink) -> ParseFeedResult<Feed> {
     let parsed = serde_json::from_reader(stream);
     if let Ok(json_feed) = parsed {
-        convert(parser, json_feed)
+        convert(parser, json_feed, sink)
     } else {
         // Unable to parse the JSON
         Err(ParseFeedError::JsonSerde(parsed.err().unwrap()))
@@ -26,7 +26,7 @@ pub(crate) fn parse<R: Read>(parser: &Parser, stream: R) -> ParseFeedResult<Feed
 }
 
 // Convert the JSON Feed into our standard model
-fn convert(parser: &Parser, jf: JsonFeed) -> ParseFeedResult<Feed> {
+fn convert(parser: &Parser, jf: JsonFeed, sink: &mut EntrySink) -> ParseFeedResult<Feed> {
     let mut feed = Feed::new(FeedType::JSON);
 
     // If the version exists, it should be something we support
@@ -76,17 +76,17 @@ fn convert(parser: &Parser, jf: JsonFeed) -> ParseFeedResult<Feed> {
     feed.extensions = from_json(jf.extensions, &ctx.capture);
 
     // Convert items within the JSON feed
-    jf.items.into_iter().for_each(|ji| {
-        feed.entries.push(handle_item(&ctx, ji));
-    });
+    for ji in jf.items {
+        let mut entry = handle_item(&ctx, ji);
 
-    // Per the spec, any items without an author inherit the feed
-    if !feed.authors.is_empty() {
-        feed.entries.iter_mut().for_each(|entry| {
-            if entry.authors.is_empty() {
-                entry.authors.append(&mut feed.authors.clone());
-            }
-        });
+        // Per the spec, any items without an author inherit the feed
+        if entry.authors.is_empty() {
+            entry.authors.clone_from(&feed.authors);
+        }
+
+        if sink.push(&mut feed, entry).is_break() {
+            break;
+        }
     }
 
     Ok(feed)

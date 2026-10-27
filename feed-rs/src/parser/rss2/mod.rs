@@ -8,8 +8,8 @@ use crate::parser::itunes::{handle_itunes_channel_element, handle_itunes_item_el
 use crate::parser::mediarss::MediaRssState;
 use crate::parser::podcast::{handle_podcast_channel_element, handle_podcast_item_element};
 use crate::parser::util::{if_ok_then_some, if_some_then};
+use crate::parser::{EntrySink, Parser, atom};
 use crate::parser::{ParseErrorKind, ParseFeedError, ParseFeedResult};
-use crate::parser::{Parser, atom};
 use crate::parser::{common, util};
 use crate::xml::{Element, NS};
 
@@ -17,21 +17,21 @@ use crate::xml::{Element, NS};
 mod tests;
 
 /// Parses an RSS 2.0 feed into our model
-pub(crate) fn parse<R: BufRead>(parser: &Parser, root: Element<R>) -> ParseFeedResult<Feed> {
+pub(crate) fn parse<R: BufRead>(parser: &Parser, root: Element<R>, sink: &mut EntrySink) -> ParseFeedResult<Feed> {
     // Only expecting a channel element
     let found_channel = root.children().find(|result| match result {
         Ok(element) => &element.name == "channel",
         Err(_) => true,
     });
     if let Some(channel) = found_channel {
-        handle_channel(parser, channel?)
+        handle_channel(parser, channel?, sink)
     } else {
         Err(ParseFeedError::ParseError(ParseErrorKind::NoFeedRoot))
     }
 }
 
 // Handles the <channel> element
-fn handle_channel<R: BufRead>(parser: &Parser, channel: Element<R>) -> ParseFeedResult<Feed> {
+fn handle_channel<R: BufRead>(parser: &Parser, channel: Element<R>, sink: &mut EntrySink) -> ParseFeedResult<Feed> {
     let mut feed = Feed::new(FeedType::RSS2);
 
     for child in channel.children() {
@@ -66,7 +66,13 @@ fn handle_channel<R: BufRead>(parser: &Parser, channel: Element<R>) -> ParseFeed
 
             (NS::RSS, "image") => feed.logo = handle_image(child)?,
 
-            (NS::RSS, "item") => if_some_then(handle_item(parser, child)?, |item| feed.entries.push(item)),
+            (NS::RSS, "item") => {
+                if let Some(item) = handle_item(parser, child)?
+                    && sink.push(&mut feed, item).is_break()
+                {
+                    break;
+                }
+            }
 
             (NS::Itunes, _) => handle_itunes_channel_element(child, &mut feed)?,
 

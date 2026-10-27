@@ -3,14 +3,14 @@ use std::io::BufRead;
 use crate::model::{Content, Entry, Feed, FeedType, Image, Link, Person, Text};
 use crate::parser::extension::capture;
 use crate::parser::util::if_some_then;
-use crate::parser::{ParseFeedResult, Parser, common};
+use crate::parser::{EntrySink, ParseFeedResult, Parser, common};
 use crate::xml::{Element, NS};
 
 #[cfg(test)]
 mod tests;
 
 /// Parses an RSS 1.0 feed into our model
-pub(crate) fn parse<R: BufRead>(parser: &Parser, root: Element<R>) -> ParseFeedResult<Feed> {
+pub(crate) fn parse<R: BufRead>(parser: &Parser, root: Element<R>, sink: &mut EntrySink) -> ParseFeedResult<Feed> {
     let mut feed = Feed::new(FeedType::RSS1);
 
     for child in root.children() {
@@ -20,7 +20,13 @@ pub(crate) fn parse<R: BufRead>(parser: &Parser, root: Element<R>) -> ParseFeedR
 
             (NS::RSS, "image") => feed.logo = handle_image(child)?,
 
-            (NS::RSS, "item") => if_some_then(handle_item(parser, child)?, |entry| feed.entries.push(entry)),
+            (NS::RSS, "item") => {
+                if let Some(entry) = handle_item(parser, child)?
+                    && sink.push(&mut feed, entry).is_break()
+                {
+                    break;
+                }
+            }
 
             _ => feed.extensions.extend(capture(child)?),
         }

@@ -467,3 +467,89 @@ fn feed_debug_and_json() {
 fn sanitize_available_matches_feature() {
     assert_eq!(parser::SANITIZE_AVAILABLE, cfg!(feature = "sanitize"));
 }
+
+// F6: streaming entries through a callback gives exactly the same entries and metadata as collecting them
+#[test]
+fn parse_with_matches_parse_for_all_fixtures() {
+    let parser = parser::Builder::new()
+        .id_generator(|links, title, _| {
+            format!(
+                "{}|{:?}",
+                links.first().map(|l| l.href.as_str()).unwrap_or(""),
+                title.as_ref().map(|t| &t.content)
+            )
+        })
+        .build();
+
+    let mut checked = 0;
+    for dir in ["atom", "jsonfeed", "rss0", "rss1", "rss2"] {
+        for path in std::fs::read_dir(format!("fixture/{dir}")).unwrap().map(|e| e.unwrap().path()) {
+            let name = path.file_name().unwrap().to_string_lossy().to_string();
+            if name.ends_with(".serde.json") {
+                continue;
+            }
+            let data = std::fs::read(&path).unwrap();
+            let Ok(mut collected) = parser.parse(data.as_slice()) else { continue };
+
+            let mut streamed_entries = Vec::new();
+            let streamed = parser
+                .parse_with(data.as_slice(), |entry| {
+                    streamed_entries.push(entry);
+                    std::ops::ControlFlow::Continue(())
+                })
+                .unwrap();
+
+            assert!(streamed.entries.is_empty(), "{name}");
+            assert_eq!(streamed_entries, collected.entries, "{name}");
+            collected.entries.clear();
+            assert_eq!(streamed, collected, "{name}");
+            checked += 1;
+        }
+    }
+    assert!(checked > 50, "only {checked} fixtures checked");
+}
+
+// F6: returning Break stops parsing (and does not read the rest of the input)
+#[test]
+fn parse_with_can_stop_early() {
+    use std::ops::ControlFlow;
+
+    // Everything after the second item is malformed, so a full parse fails...
+    let xml = r#"<rss version="2.0"><channel><title>t</title><item><title>1</title></item><item><title>2</title></item><item><title>3</title><broken"#;
+    assert!(parser::parse(xml.as_bytes()).is_err());
+
+    // ...but stopping after two entries never reaches it
+    let mut seen = Vec::new();
+    let feed = parser::Builder::new()
+        .build()
+        .parse_with(xml.as_bytes(), |entry| {
+            seen.push(entry.title.unwrap().content);
+            if seen.len() == 2 { ControlFlow::Break(()) } else { ControlFlow::Continue(()) }
+        })
+        .unwrap();
+    assert_eq!(seen, vec!["1", "2"]);
+    assert_eq!(feed.title.unwrap().content, "t");
+
+    // JSON Feed and Atom stop too
+    let json = r#"{"version":"https://jsonfeed.org/version/1.1","title":"j","items":[{"id":"1"},{"id":"2"},{"id":"3"}]}"#;
+    let mut count = 0;
+    parser::Builder::new()
+        .build()
+        .parse_with(json.as_bytes(), |_| {
+            count += 1;
+            ControlFlow::Break(())
+        })
+        .unwrap();
+    assert_eq!(count, 1);
+
+    let atom = r#"<feed xmlns="http://www.w3.org/2005/Atom"><entry><id>1</id></entry><entry><id>2</id></entry></feed>"#;
+    let mut ids = Vec::new();
+    parser::Builder::new()
+        .build()
+        .parse_with(atom.as_bytes(), |e| {
+            ids.push(e.id);
+            ControlFlow::Break(())
+        })
+        .unwrap();
+    assert_eq!(ids, vec!["1"]);
+}

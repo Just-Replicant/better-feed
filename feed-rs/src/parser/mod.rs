@@ -4,6 +4,7 @@ use std::fmt;
 use std::fmt::Debug;
 use std::hash::Hasher;
 use std::io::{BufRead, BufReader, Read};
+use std::ops::ControlFlow;
 use std::rc::Rc;
 
 use crate::model;
@@ -231,6 +232,47 @@ impl Parser {
     ///
     /// ```
     pub fn parse<R: Read>(&self, source: R) -> ParseFeedResult<model::Feed> {
+        self.parse_inner(source, &mut EntrySink::collect())
+    }
+
+    /// Parses the source, handing each entry to `on_entry` as soon as it has been parsed instead of collecting them.
+    ///
+    /// This keeps memory bounded by the largest single entry rather than the whole feed, and lets the caller stop early
+    /// by returning [`ControlFlow::Break`] (the rest of the input is then not read). Each entry has already had its id
+    /// generated and been sanitised (as configured), exactly as with [`Parser::parse`]; for JSON Feed, entries without
+    /// authors inherit the feed authors as usual.
+    ///
+    /// Returns the feed-level metadata seen while parsing, with `entries` empty. Feed elements that appear after the
+    /// point where parsing stopped are not included.
+    ///
+    /// ```
+    /// use std::ops::ControlFlow;
+    /// use better_feed::parser;
+    ///
+    /// let xml = r#"<rss version="2.0"><channel><title>t</title>
+    ///   <item><title>first</title></item><item><title>second</title></item><item><title>third</title></item>
+    /// </channel></rss>"#;
+    ///
+    /// let mut titles = Vec::new();
+    /// let feed = parser::Builder::new().build().parse_with(xml.as_bytes(), |entry| {
+    ///     titles.push(entry.title.unwrap().content);
+    ///     if titles.len() == 2 { ControlFlow::Break(()) } else { ControlFlow::Continue(()) }
+    /// }).unwrap();
+    ///
+    /// assert_eq!(titles, vec!["first", "second"]);
+    /// assert_eq!(feed.title.unwrap().content, "t");
+    /// assert!(feed.entries.is_empty());
+    /// ```
+    pub fn parse_with<R, F>(&self, source: R, mut on_entry: F) -> ParseFeedResult<model::Feed>
+    where
+        R: Read,
+        F: FnMut(model::Entry) -> ControlFlow<()>,
+    {
+        self.parse_inner(source, &mut EntrySink::streaming(self, &mut on_entry))
+    }
+
+    // Applies the input size limit (if any), then parses
+    fn parse_inner<R: Read>(&self, source: R, sink: &mut EntrySink) -> ParseFeedResult<model::Feed> {
         match self.limits.max_input_bytes {
             Some(limit) => {
                 let exceeded = Rc::new(Cell::new(false));
@@ -239,26 +281,26 @@ impl Parser {
                     remaining: limit,
                     exceeded: exceeded.clone(),
                 };
-                let result = self.parse_unlimited(source);
+                let result = self.parse_unlimited(source, sink);
                 if exceeded.get() {
                     Err(ParseFeedError::ParseError(ParseErrorKind::InputTooLarge { limit }))
                 } else {
                     result
                 }
             }
-            None => self.parse_unlimited(source),
+            None => self.parse_unlimited(source, sink),
         }
     }
 
-    fn parse_unlimited<R: Read>(&self, source: R) -> ParseFeedResult<model::Feed> {
+    fn parse_unlimited<R: Read>(&self, source: R, sink: &mut EntrySink) -> ParseFeedResult<model::Feed> {
         // Buffer the reader for performance (e.g. when streaming from a network) and so we can peek to determine the type of content
         let mut input = BufReader::new(source);
 
         // Determine whether this is XML or JSON and call the appropriate parser
         let result = match sniff_format(&mut input)? {
-            Some(b'<') => self.parse_xml(input),
+            Some(b'<') => self.parse_xml(input, sink),
 
-            Some(b'{') => self.parse_json(input),
+            Some(b'{') => self.parse_json(input, sink),
 
             _ => Err(ParseFeedError::ParseError(ParseErrorKind::NoFeedRoot)),
         };
@@ -266,16 +308,20 @@ impl Parser {
         // Post-processing as required
         if let Ok(mut feed) = result {
             // Some feeds do not provide IDs, so we need to generate a consistent identifier
-            assign_missing_ids(&self.id_generator, &mut feed, self.base_uri.as_deref());
+            if feed.id.is_empty() {
+                feed.id = (self.id_generator)(&feed.links, &feed.title, self.base_uri.as_deref());
+            }
 
             // Extensions are collected incrementally; release spare capacity since the feed is now complete
             feed.extensions.shrink_to_fit();
-            feed.entries.iter_mut().for_each(|entry| entry.extensions.shrink_to_fit());
 
             // Sanitise content as required
             if self.sanitize_content {
-                sanitise(&mut feed, self.sanitize_extensions);
+                sanitise_feed(&mut feed, self.sanitize_extensions);
             }
+
+            // Entries (when collected rather than streamed) get the same per-entry processing as streamed ones
+            feed.entries.iter_mut().for_each(|entry| self.finish_entry(entry));
 
             Ok(feed)
         } else {
@@ -284,8 +330,19 @@ impl Parser {
     }
 
     // Handles JSON content
-    fn parse_json<R: BufRead>(&self, source: R) -> ParseFeedResult<model::Feed> {
-        json::parse(self, source)
+    fn parse_json<R: BufRead>(&self, source: R, sink: &mut EntrySink) -> ParseFeedResult<model::Feed> {
+        json::parse(self, source, sink)
+    }
+
+    // Post-processing applied to every entry: id generation, releasing spare capacity and sanitisation
+    fn finish_entry(&self, entry: &mut model::Entry) {
+        if entry.id.is_empty() {
+            entry.id = (self.id_generator)(&entry.links, &entry.title, self.base_uri.as_deref());
+        }
+        entry.extensions.shrink_to_fit();
+        if self.sanitize_content {
+            sanitise_entry(entry, self.sanitize_extensions);
+        }
     }
 
     // Settings for capturing unmapped elements during one parse
@@ -299,7 +356,7 @@ impl Parser {
     }
 
     // Handles XML content
-    fn parse_xml<R: BufRead>(&self, source: R) -> ParseFeedResult<model::Feed> {
+    fn parse_xml<R: BufRead>(&self, source: R, sink: &mut EntrySink) -> ParseFeedResult<model::Feed> {
         // Set up the source of XML elements from the input
         let element_source = xml::ElementSource::new(source, self.base_uri.as_deref())?.with_capture(self.capture_config());
         // Errors reading the root element (malformed prolog, bad encoding etc) are reported as such
@@ -309,25 +366,25 @@ impl Parser {
             match (root.name.as_str(), version.as_deref().map(str::trim)) {
                 ("feed", _) => {
                     element_source.set_default_default_namespace(NS::Atom);
-                    return atom::parse_feed(self, root);
+                    return atom::parse_feed(self, root, sink);
                 }
                 ("entry", _) => {
                     element_source.set_default_default_namespace(NS::Atom);
-                    return atom::parse_entry(self, root);
+                    return atom::parse_entry(self, root, sink);
                 }
                 // RSS 0.90 - 0.94 (0.9x is upward compatible with 2.0, but reported as RSS0)
                 ("rss", Some(version)) if version.starts_with("0.9") => {
                     element_source.set_default_default_namespace(NS::RSS);
-                    return rss0::parse(self, root);
+                    return rss0::parse(self, root, sink);
                 }
                 // RSS 2.0, and leniently any other or missing version (e.g. "2.01", "2", or none at all)
                 ("rss", _) => {
                     element_source.set_default_default_namespace(NS::RSS);
-                    return rss2::parse(self, root);
+                    return rss2::parse(self, root, sink);
                 }
                 ("RDF", _) => {
                     element_source.set_default_default_namespace(NS::RSS);
-                    return rss1::parse(self, root);
+                    return rss1::parse(self, root, sink);
                 }
                 _ => {}
             };
@@ -490,53 +547,63 @@ impl Default for Builder {
 }
 
 // Assigns IDs to missing feed + entries as required
-fn assign_missing_ids(id_generator: &IdGenerator, feed: &mut model::Feed, uri: Option<&str>) {
-    if feed.id.is_empty() {
-        feed.id = id_generator(&feed.links, &feed.title, uri);
+// Sanitises the feed-level text fields
+fn sanitise_feed(feed: &mut model::Feed, extensions: bool) {
+    for text in [feed.description.as_mut(), feed.rights.as_mut(), feed.title.as_mut()].into_iter().flatten() {
+        text.sanitize();
     }
-
-    for entry in feed.entries.iter_mut() {
-        if entry.id.is_empty() {
-            entry.id = id_generator(&entry.links, &entry.title, uri);
-        }
+    if extensions {
+        feed.extensions.iter_mut().for_each(model::Extension::sanitize);
     }
 }
 
-// Sanitises the various text fields in the feed + entries
-fn sanitise(feed: &mut model::Feed, extensions: bool) {
-    if let Some(t) = feed.description.as_mut() {
-        t.sanitize()
+// Sanitises the text fields of one entry
+fn sanitise_entry(entry: &mut model::Entry, extensions: bool) {
+    if let Some(c) = entry.content.as_mut() {
+        c.sanitize()
     }
-    if let Some(t) = feed.rights.as_mut() {
-        t.sanitize()
+    for text in [entry.rights.as_mut(), entry.summary.as_mut(), entry.title.as_mut()].into_iter().flatten() {
+        text.sanitize();
     }
-    if let Some(t) = feed.title.as_mut() {
-        t.sanitize()
+    for media in entry.media.iter_mut() {
+        media.sanitize();
     }
-
-    for entry in feed.entries.iter_mut() {
-        if let Some(c) = entry.content.as_mut() {
-            c.sanitize()
-        }
-        if let Some(t) = entry.rights.as_mut() {
-            t.sanitize()
-        }
-        if let Some(t) = entry.summary.as_mut() {
-            t.sanitize()
-        }
-        if let Some(t) = entry.title.as_mut() {
-            t.sanitize()
-        }
-        for media in entry.media.iter_mut() {
-            media.sanitize();
-        }
-        if extensions {
-            entry.extensions.iter_mut().for_each(model::Extension::sanitize);
-        }
-    }
-
     if extensions {
-        feed.extensions.iter_mut().for_each(model::Extension::sanitize);
+        entry.extensions.iter_mut().for_each(model::Extension::sanitize);
+    }
+}
+
+// Callback receiving streamed entries
+type EntryCallback<'a> = &'a mut dyn FnMut(model::Entry) -> ControlFlow<()>;
+
+/// Destination for parsed entries: either collected on the feed, or handed to a callback as they are parsed
+pub(crate) struct EntrySink<'a> {
+    streaming: Option<(&'a Parser, EntryCallback<'a>)>,
+}
+
+impl<'a> EntrySink<'a> {
+    fn collect() -> Self {
+        EntrySink { streaming: None }
+    }
+
+    fn streaming(parser: &'a Parser, callback: EntryCallback<'a>) -> Self {
+        EntrySink {
+            streaming: Some((parser, callback)),
+        }
+    }
+
+    /// Adds an entry; a `Break` result means the caller wants no more entries, so parsing should stop
+    pub(crate) fn push(&mut self, feed: &mut model::Feed, mut entry: model::Entry) -> ControlFlow<()> {
+        match &mut self.streaming {
+            None => {
+                feed.entries.push(entry);
+                ControlFlow::Continue(())
+            }
+            Some((parser, callback)) => {
+                parser.finish_entry(&mut entry);
+                callback(entry)
+            }
+        }
     }
 }
 

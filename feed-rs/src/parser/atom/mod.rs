@@ -8,15 +8,15 @@ use crate::parser::extension::capture;
 use crate::parser::mediarss::MediaRssState;
 use crate::parser::util;
 use crate::parser::util::if_some_then;
+use crate::parser::{EntrySink, Parser, common};
 use crate::parser::{ParseErrorKind, ParseFeedError, ParseFeedResult};
-use crate::parser::{Parser, common};
 use crate::xml::{Element, NS};
 
 #[cfg(test)]
 mod tests;
 
 /// Parses an Atom feed into our model
-pub(crate) fn parse_feed<R: BufRead>(parser: &Parser, root: Element<R>) -> ParseFeedResult<Feed> {
+pub(crate) fn parse_feed<R: BufRead>(parser: &Parser, root: Element<R>, sink: &mut EntrySink) -> ParseFeedResult<Feed> {
     let mut feed = Feed::new(FeedType::Atom);
 
     // Extract top-level info
@@ -49,7 +49,13 @@ pub(crate) fn parse_feed<R: BufRead>(parser: &Parser, root: Element<R>) -> Parse
 
             (NS::Atom, "subtitle") => feed.description = handle_text(child)?,
 
-            (NS::Atom, "entry") => if_some_then(handle_entry(parser, child)?, |entry| feed.entries.push(entry)),
+            (NS::Atom, "entry") => {
+                if let Some(entry) = handle_entry(parser, child)?
+                    && sink.push(&mut feed, entry).is_break()
+                {
+                    break;
+                }
+            }
 
             _ => feed.extensions.extend(capture(child)?),
         }
@@ -61,10 +67,12 @@ pub(crate) fn parse_feed<R: BufRead>(parser: &Parser, root: Element<R>) -> Parse
 /// Parses an Atom entry into our model
 ///
 /// Note that the entry is wrapped in an empty Feed to keep the API consistent
-pub(crate) fn parse_entry<R: BufRead>(parser: &Parser, root: Element<R>) -> ParseFeedResult<Feed> {
+pub(crate) fn parse_entry<R: BufRead>(parser: &Parser, root: Element<R>, sink: &mut EntrySink) -> ParseFeedResult<Feed> {
     let mut feed = Feed::new(FeedType::Atom);
 
-    if_some_then(handle_entry(parser, root)?, |entry| feed.entries.push(entry));
+    if let Some(entry) = handle_entry(parser, root)? {
+        let _ = sink.push(&mut feed, entry);
+    }
 
     Ok(feed)
 }

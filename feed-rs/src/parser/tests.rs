@@ -333,3 +333,29 @@ fn serialised_content_escapes_attribute_values() {
     );
     assert!(!body.contains(r#"" onerror=""#));
 }
+
+// Regression (B1): iTunes data was dropped unless the item also had itunes:title or itunes:summary
+#[test]
+fn itunes_only_metadata_is_kept() {
+    let xml = r#"<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"><channel><item>
+        <title>Episode</title>
+        <itunes:duration>12:34</itunes:duration>
+        <itunes:image href="http://a/cover.jpg"/>
+        <itunes:author>Host</itunes:author>
+        <itunes:episode>7</itunes:episode>
+        <enclosure url="http://a/b.mp3" type="audio/mpeg" length="1"/>
+    </item></channel></rss>"#;
+    let feed = parser::parse(xml.as_bytes()).unwrap();
+    let media = &feed.entries[0].media;
+    let itunes = media.iter().find(|m| m.duration.is_some()).expect("iTunes media object");
+    assert_eq!(itunes.duration, Some(std::time::Duration::from_secs(12 * 60 + 34)));
+    assert_eq!(itunes.thumbnails[0].image.uri, "http://a/cover.jpg");
+    assert_eq!(itunes.credits[0].entity, "Host");
+    assert_eq!(itunes.episode.as_ref().unwrap().number, 7.0);
+    // The enclosure is still reported
+    assert!(
+        media
+            .iter()
+            .any(|m| m.content.iter().any(|c| c.url.as_ref().unwrap().as_str() == "http://a/b.mp3"))
+    );
+}

@@ -911,7 +911,18 @@ impl MediaObject {
 
     // Checks if this object has been populated with any content (e.g. iTunes, Podcast etc.)
     pub(crate) fn is_not_empty(&self) -> bool {
-        self.title.is_some() || self.description.is_some() || !self.content.is_empty() || !self.texts.is_empty() || !self.transcripts.is_empty()
+        self.title.is_some()
+            || self.description.is_some()
+            || !self.content.is_empty()
+            || !self.texts.is_empty()
+            || !self.transcripts.is_empty()
+            || self.duration.is_some()
+            || !self.thumbnails.is_empty()
+            || !self.credits.is_empty()
+            || self.community.is_some()
+            || !self.people.is_empty()
+            || self.season.is_some()
+            || self.episode.is_some()
     }
 
     // Creates a new instance with the nominated source

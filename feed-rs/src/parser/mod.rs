@@ -602,3 +602,6 @@ pub fn generate_id_from_uri_and_title(uri: &str, title: &model::Text) -> String 
 mod podcast;
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod extension_tests;

@@ -32,3 +32,6 @@ uuid = { version = "1.26.1", features = ["v4"] }
 
 [features]
 sanitize = ["dep:ammonia"]
+
+[dev-dependencies]
+proptest = "1.5"

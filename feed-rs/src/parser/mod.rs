@@ -605,3 +605,6 @@ mod tests;
 
 #[cfg(test)]
 mod extension_tests;
+
+#[cfg(test)]
+mod proptests;

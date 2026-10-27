@@ -3,4 +3,5 @@ members = [
     "feed-rs",
     "tools"
 ]
+exclude = ["fuzz"]
 resolver = "2"

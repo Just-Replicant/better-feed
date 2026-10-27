@@ -151,14 +151,10 @@ pub(crate) fn parse_person_name_email(raw: &str) -> Person {
                 let prefix_len = span.start();
                 let suffix_len = raw.len() - span.end();
 
-                let name_str = if prefix_len > suffix_len {
-                    &raw[..span.start() - 1]
-                } else if span.end() < raw.len() {
-                    &raw[span.end() + 1..]
-                } else {
-                    ""
-                };
-
+                // Slice on the match boundaries (always char boundaries) and trim separators afterwards; slicing
+                // one byte beyond the match panicked when the neighbouring character was multi-byte (e.g. NBSP)
+                let name_str = if prefix_len > suffix_len { &raw[..span.start()] } else { &raw[span.end()..] };
+                let name_str = name_str.trim_matches(|c: char| c.is_whitespace() || matches!(c, '(' | ')' | '<' | '>' | '[' | ']' | ',' | ';' | '-'));
                 let name_str = name_str.trim();
                 if !name_str.is_empty() {
                     name = Some(name_str.to_string());

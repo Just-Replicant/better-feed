@@ -289,3 +289,15 @@ fn extension_model_is_lossless_for_json() {
     let null = feed.extensions.iter().find(|e| e.name == "_null").unwrap();
     assert_eq!(null.value, Some(serde_json::Value::Null));
 }
+
+// Regression (C2): an author with a non-ASCII separator next to the email panicked
+#[test]
+fn author_with_multibyte_separator_does_not_panic() {
+    for author in ["Name\u{00A0}a@b.com", "a@b.com\u{00A0}Name"] {
+        let xml = format!(r#"<rss version="2.0"><channel><item><author>{author}</author></item></channel></rss>"#);
+        let feed = parser::parse(xml.as_bytes()).unwrap();
+        let person = &feed.entries[0].authors[0];
+        assert_eq!(person.name.as_deref(), Some("Name"));
+        assert_eq!(person.email.as_deref(), Some("a@b.com"));
+    }
+}

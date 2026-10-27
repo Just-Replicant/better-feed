@@ -84,6 +84,13 @@ fn test_parse_person_name_email() {
             Some("Simon St.Laurent"),
             Some("simonstl@simonstl.com"),
         ),
+        // Regression (C2): multi-byte characters next to the email made slicing panic
+        ("Name Here\u{00A0}a@b.com", Some("Name Here"), Some("a@b.com")),
+        ("a@b.com\u{00A0}Name Here", Some("Name Here"), Some("a@b.com")),
+        ("名前 太郎 <taro@example.jp>", Some("名前 太郎"), Some("taro@example.jp")),
+        ("taro@example.jp\u{3000}名前 太郎", Some("名前 太郎"), Some("taro@example.jp")),
+        ("🎙️ Host 🎙️(host@example.com)", Some("🎙️ Host 🎙️"), Some("host@example.com")),
+        ("Ünïcødé a@b.com", Some("Ünïcødé"), Some("a@b.com")),
     ];
 
     for (raw, expected_name, expected_email) in tests {

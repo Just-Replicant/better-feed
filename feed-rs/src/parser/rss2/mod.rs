@@ -143,21 +143,10 @@ fn handle_image<R: BufRead>(element: Element<R>) -> ParseFeedResult<Option<Image
 
             (NS::RSS, "link") => if_some_then(child.child_as_text(), |uri| image.link = Some(Link::new(uri, element.xml_base.as_ref()))),
 
-            (NS::RSS, "width") => if_some_then(child.child_as_text(), |width| {
-                if let Ok(width) = width.parse::<u32>() {
-                    if width > 0 && width <= 144 {
-                        image.width = Some(width)
-                    }
-                }
-            }),
+            // The spec caps these at 144 x 400, but larger images are common so any positive size is kept
+            (NS::RSS, "width") => image.width = child.child_as_text().and_then(|w| parse_dimension(&w)),
 
-            (NS::RSS, "height") => if_some_then(child.child_as_text(), |height| {
-                if let Ok(height) = height.parse::<u32>() {
-                    if height > 0 && height <= 400 {
-                        image.height = Some(height)
-                    }
-                }
-            }),
+            (NS::RSS, "height") => image.height = child.child_as_text().and_then(|h| parse_dimension(&h)),
 
             (NS::RSS, "description") => image.description = child.child_as_text(),
 
@@ -376,4 +365,9 @@ fn postprocess_merge_media(source: MediaObject, target: &mut MediaObject) {
     if target.transcripts.is_empty() {
         target.transcripts = source.transcripts;
     }
+}
+
+// Parses an image width or height, ignoring zero and non-numeric values
+fn parse_dimension(text: &str) -> Option<u32> {
+    text.trim().parse::<u32>().ok().filter(|v| *v > 0)
 }

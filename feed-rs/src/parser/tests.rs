@@ -430,3 +430,20 @@ fn large_leading_whitespace_is_skipped() {
 
     assert!(parser::parse(" ".repeat(20_000).as_bytes()).is_err());
 }
+
+// Regression (B11): RSS image sizes above the spec maxima (144 x 400) were silently discarded
+#[test]
+fn rss_image_dimensions_are_kept() {
+    let xml = r#"<rss version="2.0"><channel><title>t</title><image>
+        <url>http://a/logo.png</url><title>t</title><link>http://a/</link>
+        <width> 1400 </width><height>1400</height>
+    </image></channel></rss>"#;
+    let logo = parser::parse(xml.as_bytes()).unwrap().logo.unwrap();
+    assert_eq!((logo.width, logo.height), (Some(1400), Some(1400)));
+
+    let xml = r#"<rss version="2.0"><channel><title>t</title><image>
+        <url>http://a/logo.png</url><width>0</width><height>big</height>
+    </image></channel></rss>"#;
+    let logo = parser::parse(xml.as_bytes()).unwrap().logo.unwrap();
+    assert_eq!((logo.width, logo.height), (None, None));
+}

@@ -316,3 +316,20 @@ fn huge_durations_are_ignored() {
         assert!(feed.entries[0].media.iter().all(|m| m.duration.is_none()));
     }
 }
+
+// Regression (C5): attribute values in re-serialised XHTML / HTML content were not escaped,
+// producing malformed markup and allowing attribute injection
+#[test]
+fn serialised_content_escapes_attribute_values() {
+    let xml = r#"<feed xmlns="http://www.w3.org/2005/Atom"><id>1</id><entry><id>e</id>
+        <content type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml"><a href="http://a/?x=1&amp;y=&quot;2&quot;" title="&lt;b&gt;">t</a><img src="x&quot; onerror=&quot;alert(1)"/></div></content>
+    </entry></feed>"#;
+    let parser = parser::Builder::new().sanitize_content(false).build();
+    let feed = parser.parse(xml.as_bytes()).unwrap();
+    let body = feed.entries[0].content.as_ref().unwrap().body.clone().unwrap();
+    assert_eq!(
+        body,
+        r#"<a href="http://a/?x=1&amp;y=&quot;2&quot;" title="&lt;b&gt;">t</a><img src="x&quot; onerror=&quot;alert(1)"></img>"#
+    );
+    assert!(!body.contains(r#"" onerror=""#));
+}

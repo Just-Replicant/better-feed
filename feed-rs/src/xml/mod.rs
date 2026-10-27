@@ -815,7 +815,9 @@ fn append_element_start(buffer: &mut String, name: &str, attributes: &[NameValue
         buffer.push(' ');
         buffer.push_str(attr.name.as_str());
         buffer.push_str("=\"");
-        buffer.push_str(attr.value.as_str());
+        // Attribute values were unescaped when read, so they must be escaped again; otherwise a value containing
+        // a quote could close the attribute early and inject new attributes into the serialised markup
+        buffer.push_str(&quick_xml::escape::escape(attr.value.as_str()));
         buffer.push('"');
     }
     buffer.push('>');

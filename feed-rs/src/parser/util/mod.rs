@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::error::Error;
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -233,34 +234,45 @@ pub(crate) fn uuid_gen() -> String {
 // Parses a timestamp from a potentially RFC-1123 formatted timestamp (which isn't part of any feed standard, but hey
 // its the internet, why follow standards?
 fn try_parse_timestamp_rfc1123_lenient(original: &str) -> Option<DateTime<Utc>> {
-    let mut cleaned = original.trim().to_string();
-    for PatSub(regex, replacement) in fixes::rfc1123() {
-        cleaned = regex.replace(&cleaned, *replacement).to_string();
-    }
-
+    let cleaned = apply_fixes(original, fixes::rfc1123());
     DateTime::parse_from_str(&cleaned, RFC1123_FORMAT_STR).map(|t| t.with_timezone(&Utc)).ok()
 }
 
 // Parses a timestamp from a potentially RFC-2822 formatted timestamp
 fn try_parse_timestamp_rfc2822_lenient(original: &str) -> Option<DateTime<Utc>> {
-    // Clean the input string by applying each of the regex fixes
-    let mut cleaned = original.trim().to_string();
-    for PatSub(regex, replacement) in fixes::rfc2822() {
-        cleaned = regex.replace(&cleaned, *replacement).to_string();
+    let trimmed = original.trim();
+
+    // Well-formed timestamps (the common case) are parsed without running the clean-up regexes
+    if let Ok(t) = DateTime::parse_from_rfc2822(trimmed) {
+        return Some(t.with_timezone(&Utc));
     }
 
+    let cleaned = apply_fixes(trimmed, fixes::rfc2822());
     DateTime::parse_from_rfc2822(&cleaned).map(|t| t.with_timezone(&Utc)).ok()
 }
 
 // Parses a timestamp from a potentially RFC-3339 formatted string
 fn try_parse_timestamp_rfc3339_lenient(original: &str) -> Option<DateTime<Utc>> {
-    // Clean the input string by applying each of the regex fixes
-    let mut cleaned = original.trim().to_string();
-    for PatSub(regex, replacement) in fixes::rfc3339() {
-        cleaned = regex.replace(&cleaned, *replacement).to_string();
+    let trimmed = original.trim();
+
+    // Well-formed timestamps (the common case) are parsed without running the clean-up regexes
+    if let Ok(t) = DateTime::parse_from_rfc3339(trimmed) {
+        return Some(t.with_timezone(&Utc));
     }
 
+    let cleaned = apply_fixes(trimmed, fixes::rfc3339());
     DateTime::parse_from_rfc3339(cleaned.trim()).map(|t| t.with_timezone(&Utc)).ok()
+}
+
+// Applies each fix in turn, only allocating when a pattern actually matches
+fn apply_fixes<'a>(original: &'a str, fixes: &[PatSub]) -> Cow<'a, str> {
+    let mut cleaned = Cow::Borrowed(original.trim());
+    for PatSub(regex, replacement) in fixes {
+        if let Cow::Owned(replaced) = regex.replace(&cleaned, *replacement) {
+            cleaned = Cow::Owned(replaced);
+        }
+    }
+    cleaned
 }
 
 #[cfg(test)]

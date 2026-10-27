@@ -129,3 +129,34 @@ fn test_parse_person_name_email() {
         assert_eq!(person.email, expected_email, "incorrect email for {}", raw);
     }
 }
+
+// Q8: well-formed timestamps take the strict fast path, and the result matches the lenient path
+#[test]
+fn test_timestamp_strict_and_lenient_agree() {
+    for (input, expected) in [
+        ("2017-05-17T08:02:12-07:00", "2017-05-17T15:02:12Z"),
+        ("2017-05-17T08:02:12.123Z", "2017-05-17T08:02:12.123Z"),
+        ("  2017-05-17T08:02:12Z  ", "2017-05-17T08:02:12Z"),
+        ("Tue, 15 Nov 2022 20:15:04 +0000", "2022-11-15T20:15:04Z"),
+        ("Tue, 15 Nov 2022 20:15:04 GMT", "2022-11-15T20:15:04Z"),
+        // These need the clean-up regexes
+        ("2017-05-17T08:02:12-0700", "2017-05-17T15:02:12Z"),
+        ("2017-05-17", "2017-05-17T00:00:00Z"),
+        ("Tuesday, 15 November 2022 20:15:04 UTC", "2022-11-15T20:15:04Z"),
+        ("Wed, 15 Nov 2022 20:15:04 +0000", "2022-11-15T20:15:04Z"),
+        ("Nov 15 2022 9:15:04 +0000", "2022-11-15T09:15:04Z"),
+    ] {
+        let parsed = parse_timestamp_lenient(input).unwrap_or_else(|| panic!("failed to parse {input:?}"));
+        assert_eq!(parsed, expected.parse::<DateTime<Utc>>().unwrap(), "{input}");
+    }
+    assert!(parse_timestamp_lenient("not a date").is_none());
+}
+
+#[test]
+fn test_apply_fixes_borrows_when_unchanged() {
+    assert!(matches!(
+        apply_fixes(" 2017-05-17T08:02:12Z ", fixes::rfc3339()),
+        Cow::Borrowed("2017-05-17T08:02:12Z")
+    ));
+    assert!(matches!(apply_fixes("2017-05-17", fixes::rfc3339()), Cow::Owned(_)));
+}

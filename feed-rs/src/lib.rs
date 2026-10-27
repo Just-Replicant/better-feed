@@ -98,6 +98,11 @@
 mod util;
 mod xml;
 
+// Compile and run the README examples as doctests
+#[doc = include_str!("../README.md")]
+#[cfg(doctest)]
+pub struct ReadmeDoctests;
+
 pub mod model;
 pub mod parser;
 pub mod writer;

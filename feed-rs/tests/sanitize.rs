@@ -47,7 +47,7 @@ fn test_sanitize_atom_plain_text() {
     assert_eq!(feed_description.content_type.as_str(), "text/plain");
     assert_eq!(feed_title.content, r#"<script>title</script>"#);
     assert_eq!(feed_title.content_type.as_str(), "text/plain");
-    assert_eq!(feed_author.name, r#"Erika <tag /> Mustermann"#);
+    assert_eq!(feed_author.name.as_deref(), Some(r#"Erika <tag /> Mustermann"#));
 
     assert_eq!(entry_title.content, "<script>alert('xyzzy');</script>title");
     assert_eq!(entry_title.content_type.as_str(), "text/plain");
@@ -196,7 +196,7 @@ fn test_sanitize_rss1() {
 </rdf:RDF>
 "#;
     let feed = parser::parse(source.as_bytes()).unwrap();
-    println!("{:?}", &feed);
+    println!("{:?}", feed);
     let feed_title = feed.title.unwrap();
 
     let entry = feed.entries[0].clone();
@@ -235,7 +235,7 @@ fn test_sanitize_json() {
     ]
 }"#;
     let feed = parser::parse(source.as_bytes()).unwrap();
-    println!("{:?}", &feed);
+    println!("{:?}", feed);
 
     let entry = feed.entries[0].clone();
     let entry_summary = entry.summary.unwrap();

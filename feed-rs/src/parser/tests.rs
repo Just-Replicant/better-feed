@@ -461,3 +461,9 @@ fn feed_debug_and_json() {
     assert_eq!(back, feed);
     assert!(feed.to_json_pretty().unwrap().contains("\n  \"feed_type\": \"RSS2\""));
 }
+
+// Q9: the documented constant reflects the cargo feature
+#[test]
+fn sanitize_available_matches_feature() {
+    assert_eq!(parser::SANITIZE_AVAILABLE, cfg!(feature = "sanitize"));
+}

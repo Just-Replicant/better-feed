@@ -357,6 +357,11 @@ fn sniff_format<R: Read>(input: &mut BufReader<R>) -> ParseFeedResult<Option<u8>
     }
 }
 
+/// Whether HTML sanitisation is compiled in (the `sanitize` cargo feature).
+///
+/// When `false`, [`Builder::sanitize_content`] and [`Builder::sanitize_extensions`] have no effect.
+pub const SANITIZE_AVAILABLE: bool = cfg!(feature = "sanitize");
+
 /// Parses the provided source with the defaults
 ///
 /// Customisation of the parser (e.g. base URI, custom timestamp parsers etc. can be configured through the builder.
@@ -427,8 +432,9 @@ impl Builder {
         })
     }
 
-    /// Registers the flag for sanitizing content when the "sanitize" feature
-    /// is available
+    /// Sanitise HTML content (entry content, summaries, titles, rights and media text) with ammonia (default `true`).
+    ///
+    /// Has no effect unless the `sanitize` cargo feature is enabled (see [`SANITIZE_AVAILABLE`]).
     pub fn sanitize_content(mut self, flag: bool) -> Self {
         self.sanitize_content = flag;
         self

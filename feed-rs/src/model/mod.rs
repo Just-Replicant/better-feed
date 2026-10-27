@@ -873,11 +873,9 @@ impl Link {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum LinkTarget {
     /// A link to comments, likely an HTML anchor to the corresponding section of a page
-    /// [RSS 2.0 standard]: https://www.rssboard.org/rss-specification#ltcommentsgtSubelementOfLtitemgt
+    /// (see the [RSS 2.0 standard](https://www.rssboard.org/rss-specification#ltcommentsgtSubelementOfLtitemgt))
     Comments,
-    /// Link to the comments RSS feed
-    /// [Comment API NS]: https://www.rssboard.org/comment-api
-    ///
+    /// Link to the comments RSS feed (see the [Comment API namespace](https://www.rssboard.org/comment-api))
     CommentsFeed,
 }
 
@@ -1256,7 +1254,7 @@ pub struct PodcastPerson {
     pub href: Option<Url>,
 }
 
-/// Represents a [`PodcastPerson`](PodcastPerson)'s role.
+/// Represents a [`PodcastPerson`]'s role.
 ///
 /// See the [taxonomy](https://github.com/Podcastindex-org/podcast-namespace/blob/main/taxonomy.json)
 /// for a list of roles and their associated groups.
@@ -1510,7 +1508,7 @@ impl Role {
     }
 }
 
-/// Represents a [`PodcastPerson`](PodcastPerson)'s group.
+/// Represents a [`PodcastPerson`]'s group.
 ///
 /// See the [taxonomy](https://github.com/Podcastindex-org/podcast-namespace/blob/main/taxonomy.json)
 /// for a list of groups.
@@ -1570,7 +1568,7 @@ pub struct Transcript {
     pub rel: Option<String>,
 }
 
-/// Represents a podcast episode's season number. Used in tandem with the [`Episode`](Episode) number.
+/// Represents a podcast episode's season number. Used in tandem with the [`Episode`] number.
 ///
 /// See [the spec](https://podcastindex.org/namespace/1.0#season).
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1579,7 +1577,7 @@ pub struct Season {
     pub number: u32,
 }
 
-/// Represents a podcast episode's episode number. Used in tandem with the [`Season`](Season) number.
+/// Represents a podcast episode's episode number. Used in tandem with the [`Season`] number.
 ///
 /// See [the spec](https://podcastindex.org/namespace/1.0#episode).
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

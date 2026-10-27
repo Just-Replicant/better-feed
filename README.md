@@ -30,6 +30,10 @@ cargo fmt --all -- --check
 cargo bench -p better-feed
 ```
 
+## Status of the improvement plan
+
+[docs/PLAN.md](docs/PLAN.md) holds the full analysis and the status of each of the 41 items: 35 are done and 6 are partial, and each one names the commits that address it. The changes since 3.0.1 are summarised in [feed-rs/CHANGELOG.md](feed-rs/CHANGELOG.md).
+
 ## License
 
 MIT ([LICENSE-MIT](LICENSE-MIT)).

@@ -1,0 +1,60 @@
+name: Fuzzing and benchmarks
+
+on:
+  schedule:
+    - cron: "17 3 * * 1" # weekly fuzzing run
+  workflow_dispatch:
+    inputs:
+      fuzz_seconds:
+        description: Seconds to fuzz each target
+        default: "300"
+      bench:
+        description: Run the criterion benchmarks
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    name: Fuzz (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [parse, parse_untrusted]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz
+      - run: cargo install cargo-fuzz --locked
+      - name: Seed the corpus with the fixtures
+        run: mkdir -p fuzz/corpus/${{ matrix.target }} && cp feed-rs/fixture/*/*.xml feed-rs/fixture/*/*.json fuzz/corpus/${{ matrix.target }}/
+      - name: Fuzz
+        run: cargo fuzz run ${{ matrix.target }} -- -max_total_time=${{ github.event.inputs.fuzz_seconds || '300' }}
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: fuzz-artifacts-${{ matrix.target }}
+          path: fuzz/artifacts
+
+  bench:
+    name: Benchmarks
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.bench == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo bench -p better-feed --bench parse
+      - uses: actions/upload-artifact@v4
+        with:
+          name: criterion-report
+          path: target/criterion

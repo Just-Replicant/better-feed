@@ -2,7 +2,7 @@
 
 use std::io::{self, BufRead, Read};
 use std::process::ExitCode;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use better_feed::parser;
 
@@ -90,6 +90,7 @@ pub fn check_urls(input: impl BufRead) -> ExitCode {
         let Some(url) = url_from_line(&line) else { continue };
 
         print!("{url}  ... ");
+        let started = Instant::now();
         let result = fetch(&client, url).and_then(|body| {
             parser::Builder::new()
                 .base_uri(Some(url))
@@ -98,13 +99,14 @@ pub fn check_urls(input: impl BufRead) -> ExitCode {
                 .map(|feed| feed.entries.len())
                 .map_err(|e| format!("{e}\n{}", preview(&body)))
         });
+        let elapsed = format_elapsed(started.elapsed());
         match result {
             Ok(entries) => {
                 ok += 1;
-                println!("ok ({entries} entries)");
+                println!("ok ({entries} entries, {elapsed})");
             }
             Err(error) => {
-                println!("failed: {error}\n{}", "-".repeat(61));
+                println!("failed after {elapsed}: {error}\n{}", "-".repeat(61));
                 failed.push(url.to_string());
             }
         }
@@ -116,6 +118,11 @@ pub fn check_urls(input: impl BufRead) -> ExitCode {
     }
 
     if failed.is_empty() { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+/// Formats a duration as milliseconds, e.g. "152 ms"
+pub fn format_elapsed(elapsed: Duration) -> String {
+    format!("{} ms", elapsed.as_millis())
 }
 
 #[cfg(test)]
@@ -141,6 +148,11 @@ mod tests {
         bytes.extend("é and more".as_bytes());
         preview(&bytes);
         preview(&[0xff, 0xfe]);
+    }
+
+    #[test]
+    fn elapsed_is_in_milliseconds() {
+        assert_eq!(format_elapsed(Duration::from_micros(1_234_567)), "1234 ms");
     }
 
     #[test]

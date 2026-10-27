@@ -10,3 +10,7 @@ publish = false
 better-feed = { path = "../feed-rs" }
 reqwest = { version = "0.13.5", features = ["blocking"] }
 serde_json = "1.0.151"
+
+[features]
+# Sanitise HTML in the better-feed CLI (not on by default so workspace builds keep better-feed's own defaults)
+sanitize = ["better-feed/sanitize"]

@@ -12,6 +12,9 @@ use url::Url;
 use crate::parser::util::parse_timestamp_lenient;
 use crate::parser::{ParseErrorKind, ParseFeedError, util};
 
+mod accessors;
+pub use accessors::{Chapters, Cloud, Funding, GeoPoint, Locked, Soundbite, Source, ValueBlock, ValueRecipient, ns};
+
 /// Combined model for a syndication feed (i.e. RSS1, RSS 2, Atom, JSON Feed)
 ///
 /// The model is based on the Atom standard as a start with RSS1+2 mapped on to it e.g.

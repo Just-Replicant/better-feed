@@ -95,18 +95,39 @@ fn test_broken() {
     let broken_rss = r#"
         <?xml version="1.0" encoding="UTF-8"?><?xml-stylesheet href="stylesheet.xsl" type="text/xsl"?><rss version="2.0" xmlns:podcast="https://podcastindex.org/namespace/1.0"><channel><podcast:person role="ThisIsNotAValidRole" href="https://ahl.dtrace.org/">Adam Leventhal</podcast:person></channel></rss>
     "#;
-    match parser::parse(broken_rss.as_bytes()) {
-        Err(ParseFeedError::ParseError(kind)) => match kind {
-            ParseErrorKind::UnknownEnumVariant {
-                position,
-                reference: _reference,
-            } => {
-                assert_eq!(position, 260)
-            }
-            _ => panic!("Incorrect error kind {:?}", kind),
-        },
-        _ => panic!("Should not have been able to parse broken feed"),
-    }
+    // Regression (B7): an unknown role used to fail the whole feed; the element is now kept as an extension
+    let feed = parser::parse(broken_rss.as_bytes()).unwrap();
+    assert!(feed.people.is_empty());
+    let ext = &feed.extensions[0];
+    assert_eq!(ext.name, "person");
+    assert_eq!(ext.attr("role"), Some("ThisIsNotAValidRole"));
+    assert_eq!(ext.text.as_deref(), Some("Adam Leventhal"));
+}
+
+// Regression (B7): role and group default per the spec, are case-insensitive, and bad values do not fail the feed
+#[test]
+fn podcast_person_roles() {
+    use crate::model::{Group, Role};
+    let xml = r#"<rss version="2.0" xmlns:podcast="https://podcastindex.org/namespace/1.0"><channel>
+        <podcast:person>No Role</podcast:person>
+        <podcast:person role="guest">Lower Case</podcast:person>
+        <podcast:person role="Composer" group="misc.">Misc Group</podcast:person>
+        <podcast:person role="Host" group="Not A Group">Bad Group</podcast:person>
+        <item><title>t</title><podcast:person role="bogus">Item Person</podcast:person></item>
+    </channel></rss>"#;
+    let feed = parser::parse(xml.as_bytes()).unwrap();
+    let people: Vec<_> = feed.people.iter().map(|p| (p.name.as_str(), p.role, p.group)).collect();
+    assert_eq!(
+        people,
+        vec![
+            ("No Role", Role::Host, Group::Cast),
+            ("Lower Case", Role::Guest, Group::Cast),
+            ("Misc Group", Role::Composer, Group::Misc),
+        ]
+    );
+    assert_eq!(feed.extensions.len(), 1);
+    assert_eq!(feed.extensions[0].attr("group"), Some("Not A Group"));
+    assert_eq!(feed.entries[0].extensions[0].attr("role"), Some("bogus"));
 }
 
 // Regression (C4): a parse error part-way through an item left MediaRSS state behind,

@@ -1527,7 +1527,7 @@ impl Group {
             "Cast" => Ok(Group::Cast),
             "Community" => Ok(Group::Community),
             "Creative Direction" => Ok(Group::CreativeDirection),
-            "Misc" => Ok(Group::Misc),
+            "Misc" | "Misc." => Ok(Group::Misc),
             "Video Post-Production" => Ok(Group::VideoPostProduction),
             "Video Production" => Ok(Group::VideoProduction),
             "Visuals" => Ok(Group::Visuals),

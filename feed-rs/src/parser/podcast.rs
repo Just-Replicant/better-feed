@@ -10,7 +10,7 @@ use url::Url;
 // Process <podcast> elements at channel level updating the Feed object as required
 pub(crate) fn handle_podcast_channel_element<R: BufRead>(element: Element<R>, feed: &mut Feed) -> ParseFeedResult<()> {
     match element.ns_and_tag() {
-        (NS::Podcast, "person") => if_some_then(handle_person(element)?, |person| feed.people.push(person)),
+        (NS::Podcast, "person") => if_some_then(handle_person(element, &mut feed.extensions)?, |person| feed.people.push(person)),
         _ => feed.extensions.extend(capture(element)?),
     }
 
@@ -24,7 +24,7 @@ pub(crate) fn handle_podcast_item_element<R: BufRead>(
     extensions: &mut Vec<Extension>,
 ) -> ParseFeedResult<()> {
     match element.ns_and_tag() {
-        (NS::Podcast, "person") => if_some_then(handle_person(element)?, |person| media_obj.people.push(person)),
+        (NS::Podcast, "person") => if_some_then(handle_person(element, extensions)?, |person| media_obj.people.push(person)),
 
         (NS::Podcast, "season") => if_some_then(common::handle_season(element), |season| media_obj.season = Some(season)),
 
@@ -39,25 +39,31 @@ pub(crate) fn handle_podcast_item_element<R: BufRead>(
 }
 
 // Handles <podcast:person>
-fn handle_person<R: BufRead>(element: Element<R>) -> ParseFeedResult<Option<PodcastPerson>> {
-    if let Some(role) = element.attr_value("role") {
-        let role = Role::parse(element.buffer_pos, &role)?;
-        if let Some(name) = element.child_as_text() {
-            return Ok(Some(PodcastPerson {
-                name,
-                role,
-                group: element
-                    .attr_value("group")
-                    .map(|g| Group::parse(element.buffer_pos, &g))
-                    .transpose()?
-                    .unwrap_or_default(),
-                img: element.attr_value("img").and_then(|img| Url::parse(&img).ok()),
-                href: element.attr_value("href").and_then(|href| Url::parse(&href).ok()),
-            }));
-        }
-    }
+//
+// Per the spec the role defaults to "host" and the group to "cast". A role or group that is not in the
+// taxonomy does not fail the feed; the element is kept as an extension instead so nothing is lost.
+fn handle_person<R: BufRead>(element: Element<R>, extensions: &mut Vec<Extension>) -> ParseFeedResult<Option<PodcastPerson>> {
+    let role = match element.attr_value("role") {
+        Some(role) => Role::parse(element.buffer_pos, role.trim()).ok(),
+        None => Some(Role::Host),
+    };
+    let group = match element.attr_value("group") {
+        Some(group) => Group::parse(element.buffer_pos, group.trim()).ok(),
+        None => Some(Group::default()),
+    };
 
-    Ok(None)
+    let (Some(role), Some(group)) = (role, group) else {
+        extensions.extend(capture(element)?);
+        return Ok(None);
+    };
+
+    Ok(element.child_as_text().map(|name| PodcastPerson {
+        name,
+        role,
+        group,
+        img: element.attr_value("img").and_then(|img| Url::parse(&img).ok()),
+        href: element.attr_value("href").and_then(|href| Url::parse(&href).ok()),
+    }))
 }
 
 // Handles <podcast:transcript>

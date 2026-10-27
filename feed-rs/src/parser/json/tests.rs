@@ -14,8 +14,8 @@ fn test_example_1() {
         .id(&actual.id)                 // not in test content
         .updated(actual.updated)        // not in test content
         .title(Text::new("Daring Fireball".into()))
-        .link(Link::new("https://daringfireball.net/", None))
-        .link(Link::new("https://daringfireball.net/feeds/json", None))
+        .link(Link::new("https://daringfireball.net/", None).rel("alternate"))
+        .link(Link::new("https://daringfireball.net/feeds/json", None).rel("self"))
         .author(Person::parse("John Gruber")
             .role("author")
             .uri("https://twitter.com/gruber"))
@@ -26,8 +26,8 @@ fn test_example_1() {
             .published("2020-01-24T23:46:57Z")
             .updated_parsed("2020-01-24T23:46:57Z")
             .id("https://daringfireball.net/linked/2020/01/24/bezos-iphone-x")
-            .link(Link::new("https://daringfireball.net/linked/2020/01/24/bezos-iphone-x", None))
-            .link(Link::new("https://www.nytimes.com/2020/01/22/technology/jeff-bezos-hack-iphone.html", None))
+            .link(Link::new("https://daringfireball.net/linked/2020/01/24/bezos-iphone-x", None).rel("alternate"))
+            .link(Link::new("https://www.nytimes.com/2020/01/22/technology/jeff-bezos-hack-iphone.html", None).rel("related"))
             .author(Person::parse("John Gruber").role("author"))
             .content(Content::default()
                 .body(r#"<p>Good summary from The New York Times. Until this week’s news, I don’t believe we knew what type of phone Bezos was using when he was hacked. Now we know: an iPhone X.</p>"#)
@@ -38,8 +38,8 @@ fn test_example_1() {
             .published("2020-01-21T01:07:00Z")
             .updated_parsed("2020-01-21T20:58:36Z")
             .id("https://daringfireball.net/linked/2020/01/20/instagram-for-win95")
-            .link(Link::new("https://daringfireball.net/linked/2020/01/20/instagram-for-win95", None))
-            .link(Link::new("https://www.behance.net/gallery/41023081/Instagram-for-Win95?utm_source=morning_brew", None))
+            .link(Link::new("https://daringfireball.net/linked/2020/01/20/instagram-for-win95", None).rel("alternate"))
+            .link(Link::new("https://www.behance.net/gallery/41023081/Instagram-for-Win95?utm_source=morning_brew", None).rel("related"))
             .author(Person::parse("John Gruber").role("author"))
             .content(Content::default()
                 .body(r#"<p>Delightful work by Petrick Studio.</p>"#)
@@ -65,8 +65,8 @@ fn test_spec_1() {
         .updated(actual.updated)        // not in test content
         .title(Text::new("JSON Feed".into()))
         .description(Text::new("JSON Feed is a pragmatic syndication format for blogs, microblogs, and other time-based content.".into()))
-        .link(Link::new("https://jsonfeed.org/", None))
-        .link(Link::new("https://jsonfeed.org/feed.json", None))
+        .link(Link::new("https://jsonfeed.org/", None).rel("alternate"))
+        .link(Link::new("https://jsonfeed.org/feed.json", None).rel("self"))
         .author(Person::parse("Brent Simmons and Manton Reece")
             .role("author")
             .uri("https://jsonfeed.org/"))
@@ -75,7 +75,7 @@ fn test_spec_1() {
             .id("https://jsonfeed.org/2017/05/17/announcing_json_feed")
             .title(Text::new("Announcing JSON Feed".into()))
             .published("2017-05-17T08:02:12-07:00")
-            .link(Link::new("https://jsonfeed.org/2017/05/17/announcing_json_feed", None))
+            .link(Link::new("https://jsonfeed.org/2017/05/17/announcing_json_feed", None).rel("alternate"))
             .author(Person::parse("Brent Simmons and Manton Reece")
                 .role("author")
                 .uri("https://jsonfeed.org/"))
@@ -158,6 +158,69 @@ fn test_unknown_keys_are_kept() {
     assert_eq!(feed.extensions[0].name, "user_comment");
     assert_eq!(feed.extensions[0].namespace.as_deref(), Some("https://jsonfeed.org"));
     assert_eq!(feed.extensions[0].text.as_deref(), Some("hello"));
-    assert_eq!(feed.entries[0].extensions[0].name, "image");
-    assert_eq!(feed.entries[0].extensions[0].text.as_deref(), Some("https://example.com/a.png"));
+    // "image" is a known item field, so it is mapped into the model rather than kept as an extension
+    assert!(feed.entries[0].extensions.is_empty());
+    assert_eq!(feed.entries[0].media[0].thumbnails[0].image.uri, "https://example.com/a.png");
+}
+
+// Regression (B6): numeric ids failed the whole feed, relative URLs were not resolved and several
+// spec fields (image, banner_image, language, next_url, hubs) were ignored
+#[test]
+fn test_spec_fields_ids_and_relative_urls() {
+    let json = r#"{
+      "version": "https://jsonfeed.org/version/1.1",
+      "title": "Example",
+      "home_page_url": "/",
+      "feed_url": "https://example.com/blog/feed.json",
+      "next_url": "feed.json?page=2",
+      "icon": "icon.png",
+      "hubs": [{ "type": "WebSub", "url": "https://hub.example.com/" }],
+      "items": [
+        { "id": 123, "url": "posts/1", "image": "img/1.png", "banner_image": "img/1-wide.png", "language": "fr-FR",
+          "content_text": "hi", "attachments": [{ "url": "audio/1.mp3", "mime_type": "audio/mpeg" }] },
+        { "id": 4.5, "content_text": "float" },
+        { "id": null, "content_text": "null" }
+      ]
+    }"#;
+    let feed = parser::parse(json.as_bytes()).unwrap();
+
+    let links: Vec<_> = feed.links.iter().map(|l| (l.rel.as_deref(), l.href.as_str())).collect();
+    assert_eq!(
+        links,
+        vec![
+            (Some("alternate"), "https://example.com/"),
+            (Some("self"), "https://example.com/blog/feed.json"),
+            (Some("next"), "https://example.com/blog/feed.json?page=2"),
+            (Some("hub"), "https://hub.example.com/"),
+        ]
+    );
+    assert_eq!(feed.links[3].media_type.as_deref(), Some("WebSub"));
+    assert_eq!(feed.logo.as_ref().unwrap().uri, "https://example.com/blog/icon.png");
+
+    let entry = &feed.entries[0];
+    assert_eq!(entry.id, "123");
+    assert_eq!(entry.language.as_deref(), Some("fr-FR"));
+    assert_eq!(entry.links[0].href, "https://example.com/blog/posts/1");
+    assert_eq!(entry.links[1].href, "https://example.com/blog/audio/1.mp3");
+    assert_eq!(entry.links[1].rel.as_deref(), Some("enclosure"));
+    let thumbs: Vec<_> = entry.media[0].thumbnails.iter().map(|t| t.image.uri.as_str()).collect();
+    assert_eq!(thumbs, vec!["https://example.com/blog/img/1.png", "https://example.com/blog/img/1-wide.png"]);
+    assert!(entry.extensions.is_empty());
+
+    assert_eq!(feed.entries[1].id, "4.5");
+    // A null id gets a generated one
+    assert!(!feed.entries[2].id.is_empty());
+
+    // An explicit base URI takes precedence over feed_url
+    let json = r#"{"version": "https://jsonfeed.org/version/1", "title": "t", "items": [{ "id": "1", "url": "a" }]}"#;
+    let feed = parser::Builder::new()
+        .base_uri(Some("https://other.example/x/"))
+        .build()
+        .parse(json.as_bytes())
+        .unwrap();
+    assert_eq!(feed.entries[0].links[0].href, "https://other.example/x/a");
+
+    // Ids that are neither strings nor numbers are still an error
+    let json = r#"{"version": "https://jsonfeed.org/version/1", "title": "t", "items": [{ "id": [1] }]}"#;
+    assert!(parser::parse(json.as_bytes()).is_err());
 }

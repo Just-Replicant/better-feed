@@ -80,10 +80,6 @@
 // Nested ifs are more readable when we are using a local variable in a match pattern etc
 #![allow(clippy::collapsible_if)]
 
-#[macro_use]
-extern crate serde;
-extern crate core;
-
 mod util;
 mod xml;
 

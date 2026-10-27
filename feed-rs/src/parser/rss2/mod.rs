@@ -72,7 +72,7 @@ fn handle_channel<R: BufRead>(parser: &Parser, channel: Element<R>) -> ParseFeed
 
             (NS::Podcast, _) => handle_podcast_channel_element(child, &mut feed)?,
 
-            _ => feed.extensions.push(capture(child)?),
+            _ => feed.extensions.extend(capture(child)?),
         }
     }
 
@@ -253,7 +253,7 @@ fn handle_item<R: BufRead>(parser: &Parser, element: Element<R>) -> ParseFeedRes
             }
             (NS::RSS, "comments") => if_some_then(common::handle_link(Some(LinkTarget::Comments), child), |link| entry.links.push(link)),
 
-            _ => entry.extensions.push(capture(child)?),
+            _ => entry.extensions.extend(capture(child)?),
         }
     }
 

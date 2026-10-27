@@ -146,3 +146,146 @@ fn parser_is_send_and_sync() {
         assert_eq!(handle.join().unwrap(), 1);
     }
 }
+
+// Builds an RSS item containing `depth` nested unknown elements
+fn deeply_nested_rss(depth: usize) -> String {
+    let mut xml = String::from(r#"<rss version="2.0"><channel><item><title>t</title><x:a xmlns:x="urn:x">"#);
+    for _ in 0..depth {
+        xml.push_str("<x:a>");
+    }
+    for _ in 0..depth {
+        xml.push_str("</x:a>");
+    }
+    xml.push_str("</x:a></item></channel></rss>");
+    xml
+}
+
+// Depth of the deepest nested extension
+fn extension_depth(extension: &crate::model::Extension) -> usize {
+    1 + extension.children.iter().map(extension_depth).max().unwrap_or(0)
+}
+
+// Regression (C1): extension capture recursed once per nesting level, so ~50k nested unknown
+// elements overflowed the stack and aborted the process. Upstream feed-rs returned an error.
+#[test]
+fn deeply_nested_extensions_do_not_overflow() {
+    // Run on a small stack to prove the walk is iterative
+    std::thread::Builder::new()
+        .stack_size(256 * 1024)
+        .spawn(|| {
+            let xml = deeply_nested_rss(50_000);
+            let feed = parser::parse(xml.as_bytes()).unwrap();
+            let entry = &feed.entries[0];
+            assert_eq!(entry.title.as_ref().unwrap().content, "t");
+            assert_eq!(entry.extensions.len(), 1);
+            // Default depth limit is 32
+            assert_eq!(extension_depth(&entry.extensions[0]), 32);
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+// Beyond quick-xml's own nesting limit we still get an error rather than a crash
+#[test]
+fn nesting_beyond_xml_limit_is_an_error() {
+    let xml = deeply_nested_rss(70_000);
+    assert!(parser::parse(xml.as_bytes()).is_err());
+}
+
+#[test]
+fn extension_limits_are_applied() {
+    let limits = parser::ParseLimits::default()
+        .with_max_extension_depth(2)
+        .with_max_extension_nodes(3)
+        .with_max_extension_text_bytes(4);
+    let parser = parser::Builder::new().limits(limits).build();
+
+    let xml = r#"<rss version="2.0" xmlns:x="urn:x"><channel><item>
+        <x:a>héllo world<x:b><x:c>deep</x:c></x:b></x:a>
+        <x:d>second</x:d>
+        <x:e>over budget</x:e>
+    </item></channel></rss>"#;
+    let feed = parser.parse(xml.as_bytes()).unwrap();
+    let extensions = &feed.entries[0].extensions;
+    // a, b (depth 2) and d use the 3-node budget; c is too deep and e is over budget
+    assert_eq!(extensions.len(), 2);
+    assert_eq!(extensions[0].name, "a");
+    // Truncated to 4 bytes at a character boundary ("hé" is 3 bytes, "l" makes 4)
+    assert_eq!(extensions[0].text.as_deref(), Some("hél"));
+    assert_eq!(extensions[0].children.len(), 1);
+    assert!(extensions[0].children[0].children.is_empty());
+    assert_eq!(extensions[1].name, "d");
+}
+
+#[test]
+fn extension_capture_can_be_disabled() {
+    let parser = parser::Builder::new().capture_extensions(false).build();
+    let xml = r#"<rss version="2.0" xmlns:x="urn:x"><channel><x:feedlevel>1</x:feedlevel><title>t</title>
+        <item><x:a><x:b>1</x:b></x:a><title>i</title></item></channel></rss>"#;
+    let feed = parser.parse(xml.as_bytes()).unwrap();
+    assert!(feed.extensions.is_empty());
+    assert!(feed.entries[0].extensions.is_empty());
+    // Mapped fields after the skipped elements are still parsed
+    assert_eq!(feed.title.unwrap().content, "t");
+    assert_eq!(feed.entries[0].title.as_ref().unwrap().content, "i");
+
+    let json = r#"{"version":"https://jsonfeed.org/version/1.1","title":"t","_x":1,"items":[{"id":"1","_y":2}]}"#;
+    let feed = parser.parse(json.as_bytes()).unwrap();
+    assert!(feed.extensions.is_empty());
+    assert!(feed.entries[0].extensions.is_empty());
+}
+
+#[test]
+fn max_input_bytes_is_enforced() {
+    let xml = r#"<rss version="2.0"><channel><title>t</title></channel></rss>"#;
+
+    let limits = parser::ParseLimits::default().with_max_input_bytes(Some(xml.len() as u64));
+    let parser = parser::Builder::new().limits(limits.clone()).build();
+    assert!(parser.parse(xml.as_bytes()).is_ok());
+
+    let limits = limits.with_max_input_bytes(Some(xml.len() as u64 - 1));
+    let parser = parser::Builder::new().limits(limits).build();
+    match parser.parse(xml.as_bytes()) {
+        Err(ParseFeedError::ParseError(ParseErrorKind::InputTooLarge { limit })) => assert_eq!(limit, xml.len() as u64 - 1),
+        other => panic!("expected InputTooLarge, got {:?}", other),
+    }
+}
+
+// B8: extensions keep the prefix, attribute namespaces and mixed-content tails
+#[test]
+fn extension_model_is_lossless_for_xml() {
+    let xml = r#"<rss version="2.0" xmlns:x="urn:x" xmlns:y="urn:y"><channel><item>
+        <x:note y:kind="a" plain="b" xml:lang="en">Hello <x:b>bold</x:b> world <x:i>it</x:i>!</x:note>
+    </item></channel></rss>"#;
+    let feed = parser::parse(xml.as_bytes()).unwrap();
+    let note = &feed.entries[0].extensions[0];
+    assert!(note.is(Some("urn:x"), "note"));
+    assert_eq!(note.prefix.as_deref(), Some("x"));
+    assert_eq!(note.text.as_deref(), Some("Hello"));
+    assert_eq!(note.children[0].text.as_deref(), Some("bold"));
+    assert_eq!(note.children[0].tail.as_deref(), Some("world"));
+    assert_eq!(note.children[1].tail.as_deref(), Some("!"));
+    assert_eq!(note.all_text(), "Hello bold world it !");
+
+    assert_eq!(note.attr("kind"), Some("a"));
+    assert_eq!(note.attr_ns(Some("urn:y"), "kind"), Some("a"));
+    assert_eq!(note.attr_ns(None, "plain"), Some("b"));
+    let lang = note.attributes.iter().find(|a| a.name == "lang").unwrap();
+    assert_eq!(lang.prefix.as_deref(), Some("xml"));
+    assert_eq!(lang.namespace.as_deref(), Some("http://www.w3.org/XML/1998/namespace"));
+}
+
+// B8: JSON extensions keep the raw value, so arrays and nulls are not lost
+#[test]
+fn extension_model_is_lossless_for_json() {
+    let json = r#"{"version":"https://jsonfeed.org/version/1.1","title":"t","_x":{"a":["c, d"],"b":["c","d"],"n":null},"_null":null,"items":[]}"#;
+    let feed = parser::parse(json.as_bytes()).unwrap();
+    let x = feed.extensions.iter().find(|e| e.name == "_x").unwrap();
+    let value = x.value.as_ref().unwrap();
+    assert_eq!(value["a"], serde_json::json!(["c, d"]));
+    assert_eq!(value["b"], serde_json::json!(["c", "d"]));
+    assert!(value["n"].is_null());
+    let null = feed.extensions.iter().find(|e| e.name == "_null").unwrap();
+    assert_eq!(null.value, Some(serde_json::Value::Null));
+}

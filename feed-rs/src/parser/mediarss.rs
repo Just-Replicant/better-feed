@@ -131,7 +131,7 @@ fn inner_handle_mediarss_element<R: BufRead>(element: Element<R>, scope: &mut Sc
 
             (NS::MediaRSS, "rating") => scope.rating = handle_media_rating(element),
 
-            _ => scope.extensions.push(capture(element)?),
+            _ => scope.extensions.extend(capture(element)?),
         }
     }
 

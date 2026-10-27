@@ -343,27 +343,118 @@ impl Default for Entry {
     }
 }
 
-/// An element that has no dedicated field on [`Feed`] or [`Entry`].
+/// An element (or JSON property) that has no dedicated field on [`Feed`] or [`Entry`].
 ///
-/// `namespace` is the XML namespace URI. JSON Feed leftovers use `https://jsonfeed.org`.
+/// For XML feeds:
+/// * `namespace` is the namespace URI the element is bound to (if any) and `prefix` the prefix used in the document
+/// * `name` is the local name (without prefix)
+/// * `text` is the (trimmed) text before the first child element, and each child's `tail` is the (trimmed) text
+///   that follows it, so mixed content can be reassembled in document order
+/// * deeply nested children and very long text are cut off according to [`crate::parser::ParseLimits`]
+///
+/// For JSON Feed, unmapped properties use the namespace `https://jsonfeed.org` and `value` holds the raw JSON value
+/// (lossless), while `text` / `children` give a simplified view (arrays of scalars are joined with `", "`).
+///
+/// Extension text is never sanitised, even when [`crate::parser::Builder::sanitize_content`] is enabled,.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[non_exhaustive]
 pub struct Extension {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub namespace: Option<String>,
+    /// The namespace prefix used in the source document (XML only)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prefix: Option<String>,
     pub name: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attributes: Vec<ExtensionAttribute>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
+    /// Text following this element within its parent (XML mixed content)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tail: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub children: Vec<Extension>,
+    /// The raw JSON value (JSON Feed only)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<Value>,
+}
+
+impl Extension {
+    /// Creates an extension with the given namespace, local name and text
+    pub fn named(namespace: Option<&str>, name: &str, text: Option<String>) -> Extension {
+        Extension {
+            namespace: namespace.map(str::to_owned),
+            prefix: None,
+            name: name.to_owned(),
+            attributes: Vec::new(),
+            text,
+            tail: None,
+            children: Vec::new(),
+            value: None,
+        }
+    }
+
+    /// Returns true if this extension has the given namespace URI and local name
+    pub fn is(&self, namespace: Option<&str>, name: &str) -> bool {
+        self.namespace.as_deref() == namespace && self.name == name
+    }
+
+    /// Value of the attribute with the given local name (any namespace)
+    pub fn attr(&self, name: &str) -> Option<&str> {
+        self.attributes.iter().find(|a| a.name == name).map(|a| a.value.as_str())
+    }
+
+    /// Value of the attribute with the given namespace URI and local name
+    pub fn attr_ns(&self, namespace: Option<&str>, name: &str) -> Option<&str> {
+        self.attributes
+            .iter()
+            .find(|a| a.name == name && a.namespace.as_deref() == namespace)
+            .map(|a| a.value.as_str())
+    }
+
+    /// The first child with the given namespace URI and local name
+    pub fn child(&self, namespace: Option<&str>, name: &str) -> Option<&Extension> {
+        self.children.iter().find(|c| c.is(namespace, name))
+    }
+
+    /// All children with the given namespace URI and local name
+    pub fn children_named<'a>(&'a self, namespace: Option<&'a str>, name: &'a str) -> impl Iterator<Item = &'a Extension> + 'a {
+        self.children.iter().filter(move |c| c.is(namespace, name))
+    }
+
+    /// The text of this element and all of its descendants in document order, joined by single spaces
+    pub fn all_text(&self) -> String {
+        let mut parts = Vec::new();
+        collect_text(self, &mut parts);
+        parts.join(" ")
+    }
+}
+
+fn collect_text<'a>(extension: &'a Extension, parts: &mut Vec<&'a str>) {
+    if let Some(text) = &extension.text {
+        parts.push(text);
+    }
+    for child in &extension.children {
+        collect_text(child, parts);
+        if let Some(tail) = &child.tail {
+            parts.push(tail);
+        }
+    }
 }
 
 /// One attribute on an [`Extension`].
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[non_exhaustive]
 pub struct ExtensionAttribute {
+    /// Local name of the attribute (without prefix)
     pub name: String,
     pub value: String,
+    /// The namespace prefix used in the source document, if any (e.g. `xml` for `xml:lang`)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prefix: Option<String>,
+    /// The namespace URI of a prefixed attribute
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub namespace: Option<String>,
 }
 
 #[cfg(test)]

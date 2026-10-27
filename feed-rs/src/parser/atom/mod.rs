@@ -51,7 +51,7 @@ pub(crate) fn parse_feed<R: BufRead>(parser: &Parser, root: Element<R>) -> Parse
 
             (NS::Atom, "entry") => if_some_then(handle_entry(parser, child)?, |entry| feed.entries.push(entry)),
 
-            _ => feed.extensions.push(capture(child)?),
+            _ => feed.extensions.extend(capture(child)?),
         }
     }
 
@@ -256,7 +256,7 @@ fn handle_entry<R: BufRead>(parser: &Parser, element: Element<R>) -> ParseFeedRe
             // Handle MediaRSS elements
             (NS::MediaRSS, _) => mediarss.handle_entry_mediarss_element(child)?,
 
-            _ => entry.extensions.push(capture(child)?),
+            _ => entry.extensions.extend(capture(child)?),
         }
     }
 

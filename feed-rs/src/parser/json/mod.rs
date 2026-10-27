@@ -5,7 +5,7 @@ use mediatype::{MediaTypeBuf, names};
 use serde_json::{Map, Value};
 
 use crate::model::{Category, Content, Entry, Feed, FeedType, Image, Link, Person, Text};
-use crate::parser::extension::from_json;
+use crate::parser::extension::{CaptureConfig, from_json};
 use crate::parser::util::if_some_then;
 use crate::parser::{ParseFeedError, ParseFeedResult, Parser};
 
@@ -49,11 +49,12 @@ fn convert(parser: &Parser, jf: JsonFeed) -> ParseFeedResult<Feed> {
 
     handle_authors(&mut feed.authors, &jf.author, &jf.authors);
 
-    feed.extensions = from_json(jf.extensions);
+    let capture = parser.capture_config();
+    feed.extensions = from_json(jf.extensions, &capture);
 
     // Convert items within the JSON feed
     jf.items.into_iter().for_each(|ji| {
-        feed.entries.push(handle_item(parser, ji));
+        feed.entries.push(handle_item(parser, ji, &capture));
     });
 
     // Per the spec, any items without an author inherit the feed
@@ -115,7 +116,7 @@ fn handle_content(content: Option<String>, content_type: MediaTypeBuf) -> Option
 }
 
 // Converts a JSON feed item into our model
-fn handle_item(parser: &Parser, ji: JsonItem) -> Entry {
+fn handle_item(parser: &Parser, ji: JsonItem, capture: &CaptureConfig) -> Entry {
     let mut entry = Entry {
         id: ji.id.unwrap_or("".into()),
         ..Default::default()
@@ -155,7 +156,7 @@ fn handle_item(parser: &Parser, ji: JsonItem) -> Entry {
         attachments.into_iter().map(handle_attachment).for_each(|link| entry.links.push(link))
     });
 
-    entry.extensions = from_json(ji.extensions);
+    entry.extensions = from_json(ji.extensions, capture);
 
     entry
 }

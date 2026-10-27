@@ -1,8 +1,10 @@
+use std::cell::Cell;
 use std::error::Error;
 use std::fmt;
 use std::fmt::Debug;
 use std::hash::Hasher;
 use std::io::{BufRead, BufReader, Read};
+use std::rc::Rc;
 
 use crate::model;
 use crate::parser::util::{IdGenerator, TimestampParser};
@@ -13,7 +15,7 @@ use siphasher::sip128::{Hasher128, SipHasher};
 
 mod atom;
 mod common;
-mod extension;
+pub(crate) mod extension;
 mod itunes;
 mod json;
 mod mediarss;
@@ -92,6 +94,8 @@ pub enum ParseErrorKind {
     UnknownEnumVariant { position: u64, reference: String },
     /// Unexpected state
     IllegalState { position: u64, reference: String },
+    /// The source is larger than [`ParseLimits::max_input_bytes`]
+    InputTooLarge { limit: u64 },
 }
 
 impl fmt::Display for ParseErrorKind {
@@ -102,15 +106,93 @@ impl fmt::Display for ParseErrorKind {
             ParseErrorKind::MissingContent { position, reference } => write!(f, "missing {} at position {}", reference, position),
             ParseErrorKind::UnknownEnumVariant { position, reference } => write!(f, "unknown enum variant {} at position {}", reference, position),
             ParseErrorKind::IllegalState { position, reference } => write!(f, "illegal parser state {} at position {}", reference, position),
+            ParseErrorKind::InputTooLarge { limit } => write!(f, "input exceeds the limit of {} bytes", limit),
         }
     }
 }
 
+/// Limits applied while parsing, to bound memory use when parsing untrusted input.
+///
+/// Start from [`ParseLimits::default()`] (or [`ParseLimits::untrusted()`]) and adjust the fields:
+///
+/// ```
+/// use better_feed::parser::{Builder, ParseLimits};
+///
+/// let limits = ParseLimits::untrusted().with_max_input_bytes(Some(5 * 1024 * 1024));
+/// let parser = Builder::new().limits(limits).build();
+/// ```
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct ParseLimits {
+    /// Maximum number of bytes read from the source; larger input fails with [`ParseErrorKind::InputTooLarge`].
+    /// `None` (the default) means unlimited.
+    pub max_input_bytes: Option<u64>,
+    /// Maximum nesting depth kept for a captured extension (default 32). Deeper children are skipped.
+    pub max_extension_depth: usize,
+    /// Maximum number of extension nodes (XML elements or JSON values) kept per feed (default 1,000,000).
+    /// Once spent, further unmapped elements are skipped.
+    pub max_extension_nodes: usize,
+    /// Maximum bytes of text kept per extension node (default 1 MiB). Longer text is truncated at a character boundary.
+    pub max_extension_text_bytes: usize,
+}
+
+impl Default for ParseLimits {
+    fn default() -> Self {
+        ParseLimits {
+            max_input_bytes: None,
+            max_extension_depth: 32,
+            max_extension_nodes: 1_000_000,
+            max_extension_text_bytes: 1024 * 1024,
+        }
+    }
+}
+
+impl ParseLimits {
+    /// Conservative limits for feeds fetched from third parties: 20 MiB of input, extension depth 16,
+    /// 100,000 extension nodes and 64 KiB of text per extension.
+    pub fn untrusted() -> Self {
+        ParseLimits {
+            max_input_bytes: Some(20 * 1024 * 1024),
+            max_extension_depth: 16,
+            max_extension_nodes: 100_000,
+            max_extension_text_bytes: 64 * 1024,
+        }
+    }
+
+    /// Sets [`ParseLimits::max_input_bytes`]
+    pub fn with_max_input_bytes(mut self, max: Option<u64>) -> Self {
+        self.max_input_bytes = max;
+        self
+    }
+
+    /// Sets [`ParseLimits::max_extension_depth`]
+    pub fn with_max_extension_depth(mut self, max: usize) -> Self {
+        self.max_extension_depth = max;
+        self
+    }
+
+    /// Sets [`ParseLimits::max_extension_nodes`]
+    pub fn with_max_extension_nodes(mut self, max: usize) -> Self {
+        self.max_extension_nodes = max;
+        self
+    }
+
+    /// Sets [`ParseLimits::max_extension_text_bytes`]
+    pub fn with_max_extension_text_bytes(mut self, max: usize) -> Self {
+        self.max_extension_text_bytes = max;
+        self
+    }
+}
+
 /// Parser for various feed formats
+///
+/// A parser holds only configuration, so it is `Send + Sync` and can be shared (e.g. in an `Arc`) and reused.
 pub struct Parser {
     base_uri: Option<String>,
     id_generator: Box<IdGenerator>,
     sanitize_content: bool,
+    capture_extensions: bool,
+    limits: ParseLimits,
     timestamp_parser: Box<TimestampParser>,
 }
 
@@ -146,6 +228,26 @@ impl Parser {
     ///
     /// ```
     pub fn parse<R: Read>(&self, source: R) -> ParseFeedResult<model::Feed> {
+        match self.limits.max_input_bytes {
+            Some(limit) => {
+                let exceeded = Rc::new(Cell::new(false));
+                let source = LimitedReader {
+                    inner: source,
+                    remaining: limit,
+                    exceeded: exceeded.clone(),
+                };
+                let result = self.parse_unlimited(source);
+                if exceeded.get() {
+                    Err(ParseFeedError::ParseError(ParseErrorKind::InputTooLarge { limit }))
+                } else {
+                    result
+                }
+            }
+            None => self.parse_unlimited(source),
+        }
+    }
+
+    fn parse_unlimited<R: Read>(&self, source: R) -> ParseFeedResult<model::Feed> {
         // Buffer the reader for performance (e.g. when streaming from a network) and so we can peek to determine the type of content
         let mut input = BufReader::new(source);
 
@@ -165,6 +267,10 @@ impl Parser {
             // Some feeds do not provide IDs, so we need to generate a consistent identifier
             assign_missing_ids(&self.id_generator, &mut feed, self.base_uri.as_deref());
 
+            // Extensions are collected incrementally; release spare capacity since the feed is now complete
+            feed.extensions.shrink_to_fit();
+            feed.entries.iter_mut().for_each(|entry| entry.extensions.shrink_to_fit());
+
             // Sanitise content as required
             if self.sanitize_content {
                 sanitise(&mut feed);
@@ -181,6 +287,11 @@ impl Parser {
         json::parse(self, source)
     }
 
+    // Settings for capturing unmapped elements during one parse
+    pub(crate) fn capture_config(&self) -> extension::CaptureConfig {
+        extension::CaptureConfig::new(self.capture_extensions, &self.limits)
+    }
+
     // Parses timestamps with the configured parser (internal, or supplied via the builder)
     fn parse_timestamp(&self, text: &str) -> Option<DateTime<Utc>> {
         (self.timestamp_parser)(text)
@@ -189,7 +300,7 @@ impl Parser {
     // Handles XML content
     fn parse_xml<R: BufRead>(&self, source: R) -> ParseFeedResult<model::Feed> {
         // Set up the source of XML elements from the input
-        let element_source = xml::ElementSource::new(source, self.base_uri.as_deref())?;
+        let element_source = xml::ElementSource::new(source, self.base_uri.as_deref())?.with_capture(self.capture_config());
         if let Ok(Some(root)) = element_source.root() {
             // Dispatch to the correct parser
             let version = root.attr_value("version");
@@ -235,6 +346,8 @@ pub struct Builder {
     base_uri: Option<String>,
     id_generator: Box<IdGenerator>,
     sanitize_content: bool,
+    capture_extensions: bool,
+    limits: ParseLimits,
     timestamp_parser: Box<TimestampParser>,
 }
 
@@ -256,6 +369,8 @@ impl Builder {
             base_uri: self.base_uri,
             id_generator: self.id_generator,
             sanitize_content: self.sanitize_content,
+            capture_extensions: self.capture_extensions,
+            limits: self.limits,
             timestamp_parser: self.timestamp_parser,
         }
     }
@@ -294,6 +409,20 @@ impl Builder {
         self
     }
 
+    /// Whether unmapped elements and JSON properties are kept on `Feed::extensions` / `Entry::extensions` (default `true`).
+    ///
+    /// Disabling capture reduces memory use and parse time when extensions are not needed.
+    pub fn capture_extensions(mut self, flag: bool) -> Self {
+        self.capture_extensions = flag;
+        self
+    }
+
+    /// Limits applied while parsing (input size, extension depth / count / text size)
+    pub fn limits(mut self, limits: ParseLimits) -> Self {
+        self.limits = limits;
+        self
+    }
+
     /// Registers a custom timestamp parser
     pub fn timestamp_parser<F>(mut self, ts_parser: F) -> Self
     where
@@ -311,6 +440,8 @@ impl Default for Builder {
             base_uri: None,
             id_generator: Box::new(generate_id),
             sanitize_content: true,
+            capture_extensions: true,
+            limits: ParseLimits::default(),
             timestamp_parser: Box::new(util::parse_timestamp_lenient),
         }
     }
@@ -354,6 +485,27 @@ fn sanitise(feed: &mut model::Feed) {
         if let Some(t) = entry.title.as_mut() {
             t.sanitize()
         }
+    }
+}
+
+// Reader that stops with an error once more than the allowed number of bytes has been read
+struct LimitedReader<R> {
+    inner: R,
+    remaining: u64,
+    exceeded: Rc<Cell<bool>>,
+}
+
+impl<R: Read> Read for LimitedReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        // Read one byte more than allowed, so input of exactly the limit is accepted
+        let max = buf.len().min(usize::try_from(self.remaining.saturating_add(1)).unwrap_or(usize::MAX));
+        let read = self.inner.read(&mut buf[..max])?;
+        if read as u64 > self.remaining {
+            self.exceeded.set(true);
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "input exceeds max_input_bytes"));
+        }
+        self.remaining -= read as u64;
+        Ok(read)
     }
 }
 

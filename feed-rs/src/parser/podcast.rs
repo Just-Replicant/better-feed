@@ -11,7 +11,7 @@ use url::Url;
 pub(crate) fn handle_podcast_channel_element<R: BufRead>(element: Element<R>, feed: &mut Feed) -> ParseFeedResult<()> {
     match element.ns_and_tag() {
         (NS::Podcast, "person") => if_some_then(handle_person(element)?, |person| feed.people.push(person)),
-        _ => feed.extensions.push(capture(element)?),
+        _ => feed.extensions.extend(capture(element)?),
     }
 
     Ok(())
@@ -32,7 +32,7 @@ pub(crate) fn handle_podcast_item_element<R: BufRead>(
 
         (NS::Podcast, "transcript") => if_some_then(handle_transcript(element), |transcript| media_obj.transcripts.push(transcript)),
 
-        _ => extensions.push(capture(element)?),
+        _ => extensions.extend(capture(element)?),
     }
 
     Ok(())

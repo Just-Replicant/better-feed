@@ -22,7 +22,7 @@ pub(crate) fn parse<R: BufRead>(parser: &Parser, root: Element<R>) -> ParseFeedR
 
             (NS::RSS, "item") => if_some_then(handle_item(parser, child)?, |entry| feed.entries.push(entry)),
 
-            _ => feed.extensions.push(capture(child)?),
+            _ => feed.extensions.extend(capture(child)?),
         }
     }
 
@@ -48,7 +48,7 @@ fn handle_channel<R: BufRead>(parser: &Parser, feed: &mut Feed, channel: Element
 
             (NS::DublinCore, "rights") => feed.rights = common::handle_text(child),
 
-            _ => feed.extensions.push(capture(child)?),
+            _ => feed.extensions.extend(capture(child)?),
         }
     }
 
@@ -105,7 +105,7 @@ fn handle_item<R: BufRead>(parser: &Parser, element: Element<R>) -> ParseFeedRes
 
             (NS::DublinCore, "rights") => entry.rights = common::handle_text(child),
 
-            _ => entry.extensions.push(capture(child)?),
+            _ => entry.extensions.extend(capture(child)?),
         }
     }
 

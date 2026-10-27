@@ -5,10 +5,12 @@ use std::fmt::Debug;
 use std::io::BufRead;
 use std::mem;
 
+use quick_xml::NsReader;
 use quick_xml::encoding::DecodingReader;
 use quick_xml::events::{BytesEnd, BytesStart, Event};
 use quick_xml::name::ResolveResult;
-use quick_xml::{NsReader, Reader};
+
+use crate::parser::extension::CaptureConfig;
 use url::Url;
 
 /// Iteration over the XML elements may return an error (malformed content etc)
@@ -18,6 +20,9 @@ pub(crate) type XmlResult<T> = Result<T, XmlError>;
 pub(crate) struct ElementSource<R: BufRead> {
     // Needs to be a RefCell since we can't borrow mutably multiple times (e.g. when calls to Element::children() are nested)
     state: RefCell<SourceState<R>>,
+
+    // Settings and budget for capturing unmapped elements as extensions
+    capture: CaptureConfig,
 }
 
 impl<R: BufRead> ElementSource<R> {
@@ -36,7 +41,16 @@ impl<R: BufRead> ElementSource<R> {
         config.trim_text(false);
 
         let state = RefCell::new(SourceState::new(reader, xml_base_uri)?);
-        Ok(ElementSource { state })
+        Ok(ElementSource {
+            state,
+            capture: CaptureConfig::disabled(),
+        })
+    }
+
+    /// Configures how unmapped elements are captured as extensions
+    pub(crate) fn with_capture(mut self, capture: CaptureConfig) -> Self {
+        self.capture = capture;
+        self
     }
 
     /// Set default namespace if not set explicitly by the document.
@@ -211,6 +225,7 @@ impl<R: BufRead> ElementSource<R> {
                     attributes,
                     namespace,
                     namespace_uri,
+                    prefix,
                 } => {
                     // Starting an element increases our depth
                     state.current_depth += 1;
@@ -223,6 +238,7 @@ impl<R: BufRead> ElementSource<R> {
                         let element = Element {
                             namespace: namespace.unwrap_or(state.default_namespace),
                             namespace_uri,
+                            prefix,
                             name,
                             attributes,
                             xml_base: ElementSource::xml_base_fetch(&state),
@@ -493,6 +509,9 @@ pub(crate) struct Element<'a, R: BufRead> {
     /// Namespace URI, when the tag declared one. `NS::Unknown` still carries this.
     pub namespace_uri: Option<String>,
 
+    /// Namespace prefix used on the tag in the document, if any
+    pub prefix: Option<String>,
+
     /// A list of attributes associated with the element.
     pub attributes: Vec<NameValue>,
 
@@ -539,6 +558,19 @@ impl<'a, R: BufRead> Element<'a, R> {
         }
     }
 
+    /// Consumes this element, returning an iterator over its children that borrows only the source
+    pub(crate) fn into_children(self) -> ElementIter<'a, R> {
+        ElementIter {
+            source: self.source,
+            depth: self.depth + 1,
+        }
+    }
+
+    /// Settings for capturing unmapped elements during this parse
+    pub(crate) fn capture_config(&self) -> &'a CaptureConfig {
+        &self.source.capture
+    }
+
     /// Concatenates the children of this node into a string
     ///
     /// NOTE: the input stream is parsed then re-serialised so the output will not be identical to the input
@@ -578,6 +610,13 @@ impl<'a, R: BufRead> Debug for Element<'a, R> {
 pub(crate) struct ElementIter<'a, R: BufRead> {
     source: &'a ElementSource<R>,
     depth: u32,
+}
+
+impl<'a, R: BufRead> ElementIter<'a, R> {
+    /// Returns text found at the current position (e.g. after a fully consumed child element), if any
+    pub(crate) fn text(&self) -> Option<String> {
+        self.source.text_node()
+    }
 }
 
 impl<'a, R: BufRead> Iterator for ElementIter<'a, R> {
@@ -627,8 +666,11 @@ impl NS {
 
 /// Combination of a name and value (e.g. attribute name + value)
 pub(crate) struct NameValue {
+    /// Qualified name as written in the document (e.g. `xml:lang`)
     pub name: String,
     pub value: String,
+    /// Namespace URI of a prefixed attribute, if it could be resolved
+    pub namespace_uri: Option<String>,
 }
 
 /// Errors for the underlying parser
@@ -685,6 +727,7 @@ enum XmlEvent {
         buffer_pos: u64,
         namespace: Option<NS>,
         namespace_uri: Option<String>,
+        prefix: Option<String>,
         name: String,
         attributes: Vec<NameValue>,
     },
@@ -711,10 +754,11 @@ impl XmlEvent {
     }
 
     // Creates a new event corresponding to an XML start-tag
-    fn start<R: BufRead>(namespace: Option<NS>, namespace_uri: Option<String>, event: &BytesStart, reader: &Reader<R>) -> XmlEvent {
+    fn start<R>(namespace: Option<NS>, namespace_uri: Option<String>, event: &BytesStart, reader: &NsReader<R>) -> XmlEvent {
         let buffer_pos = reader.buffer_position();
         // Parse the name
         let name = XmlEvent::parse_name(event.name().as_ref());
+        let prefix = event.name().prefix().map(|p| p.as_ref().to_owned());
 
         // Parse the attributes
         let attributes = event
@@ -727,7 +771,17 @@ impl XmlEvent {
                     let decoded_value = &a.value;
                     let value = quick_xml::escape::unescape(decoded_value).unwrap_or_else(|_| decoded_value.clone()).to_string();
 
-                    Some(NameValue { name: name.into(), value })
+                    // Resolve the namespace of prefixed attributes (unprefixed attributes have no namespace)
+                    let namespace_uri = match reader.resolver().resolve_attribute(a.key).0 {
+                        ResolveResult::Bound(ns) => Some(ns.as_ref().to_owned()),
+                        _ => None,
+                    };
+
+                    Some(NameValue {
+                        name: name.to_owned(),
+                        value,
+                        namespace_uri,
+                    })
                 } else {
                     None
                 }
@@ -738,6 +792,7 @@ impl XmlEvent {
             buffer_pos,
             namespace,
             namespace_uri,
+            prefix,
             name,
             attributes,
         }

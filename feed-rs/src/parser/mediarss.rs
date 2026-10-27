@@ -68,7 +68,6 @@ fn emit_media_objects(mut scope: Scope, entry: &mut Entry) {
         media_obj.description = scope.description.clone();
         media_obj.thumbnails = scope.thumbnails.clone();
         media_obj.community = scope.community.clone();
-        media_obj.thumbnails = scope.thumbnails.clone();
         media_obj.texts = scope.texts.clone();
         media_obj.credits = scope.credits.clone();
 

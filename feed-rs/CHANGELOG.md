@@ -50,6 +50,8 @@ This release fixes several crashes on untrusted input and contains **breaking ch
   base URI or `feed_url`). (B6)
 - A `podcast:person` without a role was dropped (the spec default is "host"); "Misc." groups are accepted. (B7)
 - RSS `<image>` sizes above the RSS 2.0 maxima (144 x 400) were discarded. (B11)
+- A second or over-long XML declaration (`<?xml … encoding=… ?>` after the prolog) could panic inside quick-xml
+  ("set_encoding() called after prefix buffer was drained"); found by the new fuzz targets.
 - `fixture_serde` re-parsed snapshot files and produced snapshots that differed from what the tests compare; the
   `testurls` tool stopped at the first network error. (B9, B10)
 

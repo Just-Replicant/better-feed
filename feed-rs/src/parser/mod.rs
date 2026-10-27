@@ -191,6 +191,7 @@ pub struct Parser {
     base_uri: Option<String>,
     id_generator: Box<IdGenerator>,
     sanitize_content: bool,
+    sanitize_extensions: bool,
     capture_extensions: bool,
     limits: ParseLimits,
     timestamp_parser: Box<TimestampParser>,
@@ -273,7 +274,7 @@ impl Parser {
 
             // Sanitise content as required
             if self.sanitize_content {
-                sanitise(&mut feed);
+                sanitise(&mut feed, self.sanitize_extensions);
             }
 
             Ok(feed)
@@ -346,6 +347,7 @@ pub struct Builder {
     base_uri: Option<String>,
     id_generator: Box<IdGenerator>,
     sanitize_content: bool,
+    sanitize_extensions: bool,
     capture_extensions: bool,
     limits: ParseLimits,
     timestamp_parser: Box<TimestampParser>,
@@ -369,6 +371,7 @@ impl Builder {
             base_uri: self.base_uri,
             id_generator: self.id_generator,
             sanitize_content: self.sanitize_content,
+            sanitize_extensions: self.sanitize_extensions,
             capture_extensions: self.capture_extensions,
             limits: self.limits,
             timestamp_parser: self.timestamp_parser,
@@ -409,6 +412,16 @@ impl Builder {
         self
     }
 
+    /// Also sanitise the text of captured extensions (default `false`).
+    ///
+    /// Extensions carry arbitrary data whose type the parser does not know, so by default their text is left untouched
+    /// even when [`Builder::sanitize_content`] is on. Enable this if extension text may be rendered as HTML.
+    /// Like `sanitize_content`, this has no effect unless the `sanitize` feature is enabled.
+    pub fn sanitize_extensions(mut self, flag: bool) -> Self {
+        self.sanitize_extensions = flag;
+        self
+    }
+
     /// Whether unmapped elements and JSON properties are kept on `Feed::extensions` / `Entry::extensions` (default `true`).
     ///
     /// Disabling capture reduces memory use and parse time when extensions are not needed.
@@ -440,6 +453,7 @@ impl Default for Builder {
             base_uri: None,
             id_generator: Box::new(generate_id),
             sanitize_content: true,
+            sanitize_extensions: false,
             capture_extensions: true,
             limits: ParseLimits::default(),
             timestamp_parser: Box::new(util::parse_timestamp_lenient),
@@ -461,7 +475,7 @@ fn assign_missing_ids(id_generator: &IdGenerator, feed: &mut model::Feed, uri: O
 }
 
 // Sanitises the various text fields in the feed + entries
-fn sanitise(feed: &mut model::Feed) {
+fn sanitise(feed: &mut model::Feed, extensions: bool) {
     if let Some(t) = feed.description.as_mut() {
         t.sanitize()
     }
@@ -485,6 +499,16 @@ fn sanitise(feed: &mut model::Feed) {
         if let Some(t) = entry.title.as_mut() {
             t.sanitize()
         }
+        for media in entry.media.iter_mut() {
+            media.sanitize();
+        }
+        if extensions {
+            entry.extensions.iter_mut().for_each(model::Extension::sanitize);
+        }
+    }
+
+    if extensions {
+        feed.extensions.iter_mut().for_each(model::Extension::sanitize);
     }
 }
 

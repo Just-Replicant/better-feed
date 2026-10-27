@@ -355,7 +355,8 @@ impl Default for Entry {
 /// For JSON Feed, unmapped properties use the namespace `https://jsonfeed.org` and `value` holds the raw JSON value
 /// (lossless), while `text` / `children` give a simplified view (arrays of scalars are joined with `", "`).
 ///
-/// Extension text is never sanitised, even when [`crate::parser::Builder::sanitize_content`] is enabled,.
+/// Extension text is not sanitised by [`crate::parser::Builder::sanitize_content`]; enable
+/// [`crate::parser::Builder::sanitize_extensions`] as well if it may be rendered as HTML.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[non_exhaustive]
 pub struct Extension {
@@ -380,6 +381,21 @@ pub struct Extension {
 }
 
 impl Extension {
+    /// Sanitises the text (and tail) of this extension and all its children as HTML.
+    /// Has no effect unless the `sanitize` feature is enabled.
+    pub fn sanitize(&mut self) {
+        #[cfg(feature = "sanitize")]
+        {
+            let mut stack = vec![self];
+            while let Some(extension) = stack.pop() {
+                for text in [extension.text.as_mut(), extension.tail.as_mut()].into_iter().flatten() {
+                    *text = ammonia::clean(text);
+                }
+                stack.extend(extension.children.iter_mut());
+            }
+        }
+    }
+
     /// Creates an extension with the given namespace, local name and text
     pub fn named(namespace: Option<&str>, name: &str, text: Option<String>) -> Extension {
         Extension {
@@ -882,6 +898,17 @@ pub struct MediaObject {
 }
 
 impl MediaObject {
+    /// Sanitises the title, description and texts of this media object (see [`Text::sanitize`]).
+    /// Has no effect unless the `sanitize` feature is enabled.
+    pub fn sanitize(&mut self) {
+        for text in [self.title.as_mut(), self.description.as_mut()].into_iter().flatten() {
+            text.sanitize();
+        }
+        for media_text in self.texts.iter_mut() {
+            media_text.text.sanitize();
+        }
+    }
+
     // Checks if this object has been populated with any content (e.g. iTunes, Podcast etc.)
     pub(crate) fn is_not_empty(&self) -> bool {
         self.title.is_some() || self.description.is_some() || !self.content.is_empty() || !self.texts.is_empty() || !self.transcripts.is_empty()

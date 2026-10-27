@@ -28,6 +28,7 @@ pub type ParseFeedResult<T> = Result<T, ParseFeedError>;
 
 /// An error returned when parsing a feed from a source fails
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum ParseFeedError {
     ParseError(ParseErrorKind),
     // IO error
@@ -83,6 +84,7 @@ impl Error for ParseFeedError {
 
 /// Underlying cause of the parse failure
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum ParseErrorKind {
     /// Could not find the expected root element (e.g. "channel" for RSS 2, a JSON node etc.)
     NoFeedRoot,

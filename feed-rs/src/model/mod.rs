@@ -31,6 +31,7 @@ use crate::parser::{ParseErrorKind, ParseFeedError, util};
 ///
 /// Elements without a dedicated field are kept on [`Feed::extensions`] or [`Entry::extensions`].
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[non_exhaustive]
 pub struct Feed {
     /// Type of this feed (e.g. RSS2, Atom etc)
     pub feed_type: FeedType,
@@ -110,7 +111,11 @@ pub struct Feed {
 }
 
 impl Feed {
-    pub(crate) fn new(feed_type: FeedType) -> Self {
+    /// Creates an empty feed of the given type.
+    ///
+    /// `Feed` is `#[non_exhaustive]`, so this (followed by setting fields) is how code outside this crate builds one,
+    /// e.g. in tests or when converting from another model.
+    pub fn new(feed_type: FeedType) -> Self {
         Feed {
             feed_type,
             id: "".into(),
@@ -243,6 +248,7 @@ impl Feed {
 
 /// Type of feed (RSS, Atom etc)
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[non_exhaustive]
 pub enum FeedType {
     Atom,
     JSON,
@@ -253,6 +259,7 @@ pub enum FeedType {
 
 /// An item within a feed
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[non_exhaustive]
 pub struct Entry {
     /// A unique identifier for this item with a feed. If not supplied it is initialised to a hash of the first link or a UUID if not available.
     /// * Atom (required): Identifies the entry using a universally unique and permanent URI.
@@ -1590,7 +1597,8 @@ pub struct Text {
 }
 
 impl Text {
-    pub(crate) fn new(content: String) -> Text {
+    /// Creates plain text (`text/plain`) content, trimming surrounding whitespace.
+    pub fn new(content: String) -> Text {
         Text {
             content_type: MediaTypeBuf::new(names::TEXT, names::PLAIN),
             src: None,
@@ -1598,7 +1606,8 @@ impl Text {
         }
     }
 
-    pub(crate) fn html(content: String) -> Text {
+    /// Creates HTML (`text/html`) content, trimming surrounding whitespace.
+    pub fn html(content: String) -> Text {
         Text {
             content_type: MediaTypeBuf::new(names::TEXT, names::HTML),
             src: None,

@@ -40,6 +40,11 @@ const PODCAST_FEED: &str = r#"<rss version="2.0"
       <podcast:chapters url="https://a/ch.json" type="application/json+chapters"/>
       <podcast:soundbite startTime="73.0" duration="60.5">Best bit</podcast:soundbite>
       <podcast:soundbite startTime="-1" duration="10"/>
+      <podcast:alternateEnclosure type="audio/opus" length="32400000" bitrate="96000" title="High quality" default="true">
+        <podcast:source uri="https://a/ep.opus"/>
+        <podcast:source uri="ipfs://QmX"/>
+      </podcast:alternateEnclosure>
+      <podcast:alternateEnclosure length="1"/>
     </item>
     <item><title>Plain</title></item>
   </channel>
@@ -138,6 +143,15 @@ fn entry_accessors() {
         }]
     );
     assert!(entry.podcast_value().is_empty());
+    let alternates = entry.podcast_alternate_enclosures();
+    assert_eq!(alternates.len(), 1);
+    let alt = &alternates[0];
+    assert_eq!(
+        (alt.mime_type.as_str(), alt.length, alt.bitrate, alt.default),
+        ("audio/opus", Some(32_400_000), Some(96_000.0), true)
+    );
+    assert_eq!(alt.title.as_deref(), Some("High quality"));
+    assert_eq!(alt.sources, vec!["https://a/ep.opus", "ipfs://QmX"]);
 
     // Absent extensions are None / empty rather than errors
     let plain = &feed.entries[1];

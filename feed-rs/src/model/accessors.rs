@@ -194,6 +194,24 @@ pub struct Chapters {
     pub content_type: String,
 }
 
+/// Podcasting 2.0 `<podcast:alternateEnclosure>`: another version of the episode media (different format, bitrate,
+/// language, ...), available from one or more sources.
+#[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
+pub struct AlternateEnclosure {
+    pub mime_type: String,
+    pub length: Option<u64>,
+    pub bitrate: Option<f64>,
+    pub height: Option<u32>,
+    pub lang: Option<String>,
+    pub title: Option<String>,
+    pub rel: Option<String>,
+    pub codecs: Option<String>,
+    pub default: bool,
+    /// URIs from the `<podcast:source>` children, in document order
+    pub sources: Vec<String>,
+}
+
 /// Podcasting 2.0 `<podcast:soundbite>`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
@@ -375,6 +393,30 @@ impl Entry {
     /// Item-level `podcast:value` blocks.
     pub fn podcast_value(&self) -> Vec<ValueBlock> {
         self.extensions_named(Some(ns::PODCAST), "value").filter_map(value_block).collect()
+    }
+
+    /// All `podcast:alternateEnclosure` elements (those without a `type` are skipped).
+    pub fn podcast_alternate_enclosures(&self) -> Vec<AlternateEnclosure> {
+        self.extensions_named(Some(ns::PODCAST), "alternateEnclosure")
+            .filter_map(|e| {
+                Some(AlternateEnclosure {
+                    mime_type: e.attr("type")?.trim().to_string(),
+                    length: e.attr("length").and_then(|v| v.trim().parse().ok()),
+                    bitrate: e.attr("bitrate").and_then(|v| v.trim().parse().ok()),
+                    height: e.attr("height").and_then(|v| v.trim().parse().ok()),
+                    lang: e.attr("lang").map(str::to_string),
+                    title: e.attr("title").map(str::to_string),
+                    rel: e.attr("rel").map(str::to_string),
+                    codecs: e.attr("codecs").map(str::to_string),
+                    default: e.attr("default").and_then(parse_bool).unwrap_or(false),
+                    sources: e
+                        .children_named(Some(ns::PODCAST), "source")
+                        .filter_map(|s| s.attr("uri"))
+                        .map(|u| u.trim().to_string())
+                        .collect(),
+                })
+            })
+            .collect()
     }
 }
 

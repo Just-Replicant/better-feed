@@ -108,3 +108,41 @@ fn test_broken() {
         _ => panic!("Should not have been able to parse broken feed"),
     }
 }
+
+// Regression (C4): a parse error part-way through an item left MediaRSS state behind,
+// so the next parse with the same parser panicked on an assertion
+#[test]
+fn parser_reusable_after_error() {
+    let parser = parser::Builder::new().build();
+
+    let bad = r#"<rss version="2.0"><channel><item><title>a</title><enclosure url="x"></item></channel></rss>"#;
+    assert!(parser.parse(bad.as_bytes()).is_err());
+
+    let bad_atom = r#"<feed xmlns="http://www.w3.org/2005/Atom"><entry><title>a</title><link></entry></feed>"#;
+    assert!(parser.parse(bad_atom.as_bytes()).is_err());
+
+    let good = r#"<rss version="2.0"><channel><item><title>a</title></item></channel></rss>"#;
+    let feed = parser.parse(good.as_bytes()).unwrap();
+    assert_eq!(feed.entries.len(), 1);
+}
+
+// Regression (Q1): the parser can be shared between threads
+#[test]
+fn parser_is_send_and_sync() {
+    fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<parser::Parser>();
+
+    let parser = std::sync::Arc::new(parser::Builder::new().build());
+    let handles = (0..4)
+        .map(|i| {
+            let parser = parser.clone();
+            std::thread::spawn(move || {
+                let xml = format!(r#"<rss version="2.0"><channel><item><title>{i}</title></item></channel></rss>"#);
+                parser.parse(xml.as_bytes()).unwrap().entries.len()
+            })
+        })
+        .collect::<Vec<_>>();
+    for handle in handles {
+        assert_eq!(handle.join().unwrap(), 1);
+    }
+}

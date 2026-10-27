@@ -112,9 +112,6 @@ pub struct Parser {
     id_generator: Box<IdGenerator>,
     sanitize_content: bool,
     timestamp_parser: Box<TimestampParser>,
-
-    // state for MediaRSS handling
-    mediarss: mediarss::MediaRssState,
 }
 
 impl Parser {
@@ -260,7 +257,6 @@ impl Builder {
             id_generator: self.id_generator,
             sanitize_content: self.sanitize_content,
             timestamp_parser: self.timestamp_parser,
-            mediarss: mediarss::MediaRssState::new(),
         }
     }
 

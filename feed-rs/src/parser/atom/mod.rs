@@ -5,6 +5,7 @@ use mediatype::{MediaTypeBuf, names};
 use crate::model::LinkTarget::CommentsFeed;
 use crate::model::{Category, Content, Entry, Feed, FeedType, Generator, Image, Link, Person, Text};
 use crate::parser::extension::capture;
+use crate::parser::mediarss::MediaRssState;
 use crate::parser::util;
 use crate::parser::util::if_some_then;
 use crate::parser::{ParseErrorKind, ParseFeedError, ParseFeedResult};
@@ -211,8 +212,8 @@ fn handle_content<R: BufRead>(element: Element<R>) -> ParseFeedResult<Option<Con
 
 // Handles an Atom <entry>
 fn handle_entry<R: BufRead>(parser: &Parser, element: Element<R>) -> ParseFeedResult<Option<Entry>> {
-    // Note we have started a new MediaRSS entry scope
-    parser.mediarss.entry_begin();
+    // MediaRSS state is scoped to this entry
+    let mut mediarss = MediaRssState::new();
 
     // Parse the entry
     let mut entry = Entry::default();
@@ -253,14 +254,14 @@ fn handle_entry<R: BufRead>(parser: &Parser, element: Element<R>) -> ParseFeedRe
             }
 
             // Handle MediaRSS elements
-            (NS::MediaRSS, _) => parser.mediarss.handle_entry_mediarss_element(child)?,
+            (NS::MediaRSS, _) => mediarss.handle_entry_mediarss_element(child)?,
 
             _ => entry.extensions.push(capture(child)?),
         }
     }
 
     // Handle completion of an entry, potentially emitting media objects if we've found them along the way
-    parser.mediarss.entry_end(&mut entry);
+    mediarss.finish(&mut entry);
 
     Ok(Some(entry))
 }

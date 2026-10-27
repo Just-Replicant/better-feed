@@ -61,6 +61,32 @@ fn test_parse_npt() {
         Duration::from_millis(12 * 3600000 + 5 * 60000 + 35 * 1000 + 123)
     );
     assert_eq!(parse_npt("123.45").unwrap(), Duration::from_millis(123450));
+    assert_eq!(parse_npt(" npt=1:00:00 ").unwrap(), Duration::from_secs(3600));
+    assert_eq!(parse_npt("0.000000001").unwrap(), Duration::from_nanos(1));
+    assert_eq!(parse_npt("1.1234567891234").unwrap(), Duration::new(1, 123456789));
+}
+
+// Regression (C3): overflowing values panicked (unwrap on ParseIntError, multiply overflow)
+#[test]
+fn test_parse_npt_overflow_and_garbage() {
+    assert_eq!(parse_npt("99999999999999999999999"), None);
+    assert_eq!(parse_npt("9999999999999999:00:00"), None);
+    assert_eq!(parse_npt("18446744073709551615:00"), None);
+    assert_eq!(parse_npt("1.99999999999999999999999"), Some(Duration::new(1, 999999999)));
+    assert_eq!(parse_npt(""), None);
+    assert_eq!(parse_npt("abc"), None);
+    assert_eq!(parse_npt("1:2:3:4"), None);
+    assert_eq!(parse_npt("12s"), None);
+    assert_eq!(parse_npt("-5"), None);
+}
+
+// Regression (B2): iTunes durations in M:SS form were read as a number of seconds
+#[test]
+fn test_parse_itunes_durations() {
+    assert_eq!(parse_npt("12:34"), Some(Duration::from_secs(12 * 60 + 34)));
+    assert_eq!(parse_npt("90:00"), Some(Duration::from_secs(90 * 60)));
+    assert_eq!(parse_npt("1:02:03"), Some(Duration::from_secs(3723)));
+    assert_eq!(parse_npt("3600"), Some(Duration::from_secs(3600)));
 }
 
 // Test various forms of email and names in a string

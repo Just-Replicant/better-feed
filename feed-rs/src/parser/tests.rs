@@ -301,3 +301,18 @@ fn author_with_multibyte_separator_does_not_panic() {
         assert_eq!(person.email.as_deref(), Some("a@b.com"));
     }
 }
+
+// Regression (C3): huge durations panicked instead of being ignored
+#[test]
+fn huge_durations_are_ignored() {
+    for duration in ["99999999999999999999999", "9999999999999999:00:00"] {
+        let xml = format!(
+            r#"<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:media="http://search.yahoo.com/mrss/"><channel><item>
+            <itunes:title>t</itunes:title><itunes:duration>{duration}</itunes:duration>
+            <media:content url="http://a/b.mp4"><media:text start="{duration}">x</media:text></media:content>
+            </item></channel></rss>"#
+        );
+        let feed = parser::parse(xml.as_bytes()).unwrap();
+        assert!(feed.entries[0].media.iter().all(|m| m.duration.is_none()));
+    }
+}

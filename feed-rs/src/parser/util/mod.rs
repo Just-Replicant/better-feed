@@ -1,10 +1,9 @@
 use std::error::Error;
-use std::ops::Add;
 use std::sync::OnceLock;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use regex::{Captures, Regex};
+use regex::Regex;
 use url::Url;
 use uuid::Uuid;
 
@@ -176,73 +175,59 @@ pub(crate) fn parse_person_name_email(raw: &str) -> Person {
     }
 }
 
-/// Parses "normal play time" per the RSS media spec
+/// Parses "normal play time" per the RSS media spec, and iTunes durations
+///
 /// NPT has a second or sub-second resolution. It is specified as H:M:S.h (npt-hhmmss) or S.h (npt-sec), where H=hours, M=minutes, S=second and h=fractions of a second.
+/// iTunes durations are also commonly given as M:SS, which is accepted too. Surrounding whitespace and an `npt=` prefix are ignored.
+///
+/// Values that overflow, or that contain anything other than digits, colons and one decimal point, return `None`.
 pub(crate) fn parse_npt(text: &str) -> Option<Duration> {
-    // Try npt-hhmmss format first
-    static NPT_HHMMSS: OnceLock<Regex> = OnceLock::new();
-    let npt_hhmmss = NPT_HHMMSS.get_or_init(|| {
-        // Extract hours (h), minutes (m), seconds (s) and fractional seconds (f)
-        Regex::new(r"(?P<h>\d+):(?P<m>\d{2}):(?P<s>\d{2})(\.(?P<f>\d+))?").unwrap()
-    });
-    if let Some(captures) = npt_hhmmss.captures(text) {
-        let h = captures.name("h");
-        let m = captures.name("m");
-        let s = captures.name("s");
+    let text = text.trim();
+    let text = text.strip_prefix("npt=").unwrap_or(text).trim();
 
-        if let (Some(h), Some(m), Some(s)) = (h, m, s) {
-            // Parse the hours, minutes and seconds
-            let mut seconds = s.as_str().parse::<u64>().unwrap();
-            seconds += m.as_str().parse::<u64>().unwrap() * 60;
-            seconds += h.as_str().parse::<u64>().unwrap() * 3600;
-            let mut duration = Duration::from_secs(seconds);
+    // Split off the fractional seconds, if any
+    let (clock, fraction) = match text.split_once('.') {
+        Some((clock, fraction)) => (clock, Some(fraction)),
+        None => (text, None),
+    };
 
-            // Add fractional seconds if present
-            duration = parse_npt_add_frac_sec(duration, captures);
-
-            return Some(duration);
-        }
+    // One to three colon-separated components: S, M:S or H:M:S
+    let parts = clock.split(':').collect::<Vec<_>>();
+    if parts.is_empty() || parts.len() > 3 {
+        return None;
+    }
+    let mut seconds: u64 = 0;
+    for part in parts {
+        seconds = seconds.checked_mul(60)?.checked_add(parse_digits(part)?)?;
     }
 
-    // Next try npt-sec
-    static NPT_SEC: OnceLock<Regex> = OnceLock::new();
-    let npt_sec = NPT_SEC.get_or_init(|| {
-        // Extract seconds (s) and fractional seconds (f)
-        Regex::new(r"(?P<s>\d+)(\.(?P<f>\d+))?").unwrap()
-    });
-    if let Some(captures) = npt_sec.captures(text) {
-        if let Some(s) = captures.name("s") {
-            // Parse the seconds
-            let seconds = s.as_str().parse::<u64>().unwrap();
-            let mut duration = Duration::from_secs(seconds);
-
-            // Add fractional seconds if present
-            duration = parse_npt_add_frac_sec(duration, captures);
-
-            return Some(duration);
+    let nanos = match fraction {
+        Some(fraction) => {
+            if fraction.is_empty() || !fraction.bytes().all(|b| b.is_ascii_digit()) {
+                return None;
+            }
+            // Only the first nine digits are significant
+            let digits = &fraction[..fraction.len().min(9)];
+            let scale = 10u32.pow(9 - digits.len() as u32);
+            digits.parse::<u32>().ok()? * scale
         }
-    }
+        None => 0,
+    };
 
-    // Just drop it
-    None
+    Some(Duration::new(seconds, nanos))
+}
+
+// Parses a non-empty run of ASCII digits, returning None on any other character or on overflow
+fn parse_digits(text: &str) -> Option<u64> {
+    if text.is_empty() || !text.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    text.parse::<u64>().ok()
 }
 
 /// Generates a new UUID.
 pub(crate) fn uuid_gen() -> String {
     Uuid::new_v4().to_string()
-}
-
-// Adds the fractional seconds if present
-fn parse_npt_add_frac_sec(duration: Duration, captures: Captures) -> Duration {
-    if let Some(frac) = captures.name("f") {
-        let frac = frac.as_str();
-        let denom = 10f32.powi(frac.len() as i32);
-        let num = frac.parse::<f32>().unwrap();
-        let millis = (1000f32 * (num / denom)) as u64;
-        duration.add(Duration::from_millis(millis))
-    } else {
-        duration
-    }
 }
 
 // Parses a timestamp from a potentially RFC-1123 formatted timestamp (which isn't part of any feed standard, but hey

@@ -253,12 +253,10 @@ impl Parser {
         let mut input = BufReader::new(source);
 
         // Determine whether this is XML or JSON and call the appropriate parser
-        input.fill_buf()?;
-        let first_char = input.buffer().iter().find(|b| **b == b'<' || **b == b'{').map(|b| *b as char);
-        let result = match first_char {
-            Some('<') => self.parse_xml(input),
+        let result = match sniff_format(&mut input)? {
+            Some(b'<') => self.parse_xml(input),
 
-            Some('{') => self.parse_json(input),
+            Some(b'{') => self.parse_json(input),
 
             _ => Err(ParseFeedError::ParseError(ParseErrorKind::NoFeedRoot)),
         };
@@ -302,10 +300,11 @@ impl Parser {
     fn parse_xml<R: BufRead>(&self, source: R) -> ParseFeedResult<model::Feed> {
         // Set up the source of XML elements from the input
         let element_source = xml::ElementSource::new(source, self.base_uri.as_deref())?.with_capture(self.capture_config());
-        if let Ok(Some(root)) = element_source.root() {
+        // Errors reading the root element (malformed prolog, bad encoding etc) are reported as such
+        if let Some(root) = element_source.root()? {
             // Dispatch to the correct parser
             let version = root.attr_value("version");
-            match (root.name.as_str(), version.as_deref()) {
+            match (root.name.as_str(), version.as_deref().map(str::trim)) {
                 ("feed", _) => {
                     element_source.set_default_default_namespace(NS::Atom);
                     return atom::parse_feed(self, root);
@@ -314,13 +313,15 @@ impl Parser {
                     element_source.set_default_default_namespace(NS::Atom);
                     return atom::parse_entry(self, root);
                 }
-                ("rss", Some("2.0")) | ("rss", Some("")) => {
-                    element_source.set_default_default_namespace(NS::RSS);
-                    return rss2::parse(self, root);
-                }
-                ("rss", Some("0.91")) | ("rss", Some("0.92")) => {
+                // RSS 0.90 - 0.94 (0.9x is upward compatible with 2.0, but reported as RSS0)
+                ("rss", Some(version)) if version.starts_with("0.9") => {
                     element_source.set_default_default_namespace(NS::RSS);
                     return rss0::parse(self, root);
+                }
+                // RSS 2.0, and leniently any other or missing version (e.g. "2.01", "2", or none at all)
+                ("rss", _) => {
+                    element_source.set_default_default_namespace(NS::RSS);
+                    return rss2::parse(self, root);
                 }
                 ("RDF", _) => {
                     element_source.set_default_default_namespace(NS::RSS);
@@ -332,6 +333,25 @@ impl Parser {
 
         // Couldn't find a recognised feed within the provided XML stream
         Err(ParseFeedError::ParseError(ParseErrorKind::NoFeedRoot))
+    }
+}
+
+// Finds the first '<' or '{' in the input without consuming it, so the matching parser sees the whole document.
+// Buffers holding only ASCII whitespace are skipped, so large amounts of leading whitespace do not hide the root.
+fn sniff_format<R: Read>(input: &mut BufReader<R>) -> ParseFeedResult<Option<u8>> {
+    loop {
+        let buffer = input.fill_buf()?;
+        if buffer.is_empty() {
+            return Ok(None);
+        }
+        if let Some(b) = buffer.iter().find(|b| **b == b'<' || **b == b'{') {
+            return Ok(Some(*b));
+        }
+        if !buffer.iter().all(u8::is_ascii_whitespace) {
+            return Ok(None);
+        }
+        let len = buffer.len();
+        input.consume(len);
     }
 }
 

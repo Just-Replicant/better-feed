@@ -359,3 +359,53 @@ fn itunes_only_metadata_is_kept() {
             .any(|m| m.content.iter().any(|c| c.url.as_ref().unwrap().as_str() == "http://a/b.mp3"))
     );
 }
+
+// Regression (B3): RSS without a version attribute, or with an unexpected one, was rejected
+#[test]
+fn rss_version_is_lenient() {
+    use crate::model::FeedType;
+    for (root, expected) in [
+        (r#"<rss>"#, FeedType::RSS2),
+        (r#"<rss version="2.01">"#, FeedType::RSS2),
+        (r#"<rss version=" 2.0">"#, FeedType::RSS2),
+        (r#"<rss version="2">"#, FeedType::RSS2),
+        (r#"<rss version="0.91">"#, FeedType::RSS0),
+        (r#"<rss version="0.93">"#, FeedType::RSS0),
+        (r#"<rss version="0.94">"#, FeedType::RSS0),
+    ] {
+        let xml = format!(r#"{root}<channel><title>t</title></channel></rss>"#);
+        let feed = parser::parse(xml.as_bytes()).unwrap_or_else(|e| panic!("{root}: {e}"));
+        assert_eq!(feed.feed_type, expected, "{root}");
+        assert_eq!(feed.title.unwrap().content, "t");
+    }
+}
+
+// Regression (B4): XML errors while reading the root element were reported as "no root element"
+#[test]
+fn root_xml_errors_are_reported() {
+    let xml = "<?xml version=\"1.0\"?>\n<rss version=\"2.0\" <channel></channel></rss>";
+    match parser::parse(xml.as_bytes()) {
+        Err(ParseFeedError::XmlReader(_)) => {}
+        other => panic!("expected an XML error, got {:?}", other),
+    }
+
+    // A well-formed document with an unknown root is still NoFeedRoot
+    match parser::parse("<html><body/></html>".as_bytes()) {
+        Err(ParseFeedError::ParseError(ParseErrorKind::NoFeedRoot)) => {}
+        other => panic!("expected NoFeedRoot, got {:?}", other),
+    }
+}
+
+// Regression (B5): only the first buffer (8 KiB) was examined when detecting XML vs JSON
+#[test]
+fn large_leading_whitespace_is_skipped() {
+    let mut xml = " \n".repeat(10_000);
+    xml.push_str(r#"<rss version="2.0"><channel><title>t</title></channel></rss>"#);
+    assert_eq!(parser::parse(xml.as_bytes()).unwrap().title.unwrap().content, "t");
+
+    let mut json = "\n".repeat(20_000);
+    json.push_str(r#"{"version":"https://jsonfeed.org/version/1.1","title":"j","items":[]}"#);
+    assert_eq!(parser::parse(json.as_bytes()).unwrap().title.unwrap().content, "j");
+
+    assert!(parser::parse(" ".repeat(20_000).as_bytes()).is_err());
+}

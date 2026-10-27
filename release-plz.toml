@@ -1,7 +1,14 @@
+[workspace]
+# Fail the release PR if the public API changes incompatibly without a major version bump
+semver_check = true
+changelog_update = true
+
 [[package]]
 name = "better-feed"
 release = true
+changelog_path = "feed-rs/CHANGELOG.md"
 
 [[package]]
 name = "tools"
 release = false
+publish = false

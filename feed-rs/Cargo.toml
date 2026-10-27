@@ -2,6 +2,7 @@
 name = "better-feed"
 version = "3.0.1"
 edition = '2024'
+rust-version = "1.89"
 authors = ["Mark Pritchard <mpritcha@gmail.com>"]
 include = [
     "**/*.rs",

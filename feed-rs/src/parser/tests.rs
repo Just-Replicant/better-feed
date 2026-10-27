@@ -447,3 +447,17 @@ fn rss_image_dimensions_are_kept() {
     let logo = parser::parse(xml.as_bytes()).unwrap().logo.unwrap();
     assert_eq!((logo.width, logo.height), (None, None));
 }
+
+// Q7: Feed has a conventional Debug implementation, with JSON available explicitly
+#[test]
+fn feed_debug_and_json() {
+    let feed = parser::parse(r#"<rss version="2.0"><channel><title>t</title><item><title>i</title></item></channel></rss>"#.as_bytes()).unwrap();
+    let debug = format!("{:?}", feed);
+    assert!(debug.starts_with("Feed {"), "{debug}");
+    assert!(debug.contains("feed_type: RSS2"));
+
+    let json = feed.to_json().unwrap();
+    let back: crate::model::Feed = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, feed);
+    assert!(feed.to_json_pretty().unwrap().contains("\n  \"feed_type\": \"RSS2\""));
+}

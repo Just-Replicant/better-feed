@@ -30,7 +30,7 @@ use crate::parser::{ParseErrorKind, ParseFeedError, util};
 /// [iTunes podcast guide]: https://www.feedforall.com/itune-tutorial-tags.htm
 ///
 /// Elements without a dedicated field are kept on [`Feed::extensions`] or [`Entry::extensions`].
-#[derive(Clone, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct Feed {
     /// Type of this feed (e.g. RSS2, Atom etc)
     pub feed_type: FeedType,
@@ -136,9 +136,20 @@ impl Feed {
     }
 }
 
-impl Debug for Feed {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
-        f.write_str(serde_json::to_string(self).unwrap().as_str())
+impl Feed {
+    /// Serialises this feed to compact JSON (the same representation used by the crate's snapshot tests).
+    ///
+    /// ```
+    /// let feed = better_feed::parser::parse(r#"<rss version="2.0"><channel><title>t</title></channel></rss>"#.as_bytes()).unwrap();
+    /// assert!(feed.to_json().unwrap().contains(r#""feed_type":"RSS2""#));
+    /// ```
+    pub fn to_json(&self) -> serde_json::Result<String> {
+        serde_json::to_string(self)
+    }
+
+    /// Serialises this feed to indented, human-readable JSON.
+    pub fn to_json_pretty(&self) -> serde_json::Result<String> {
+        serde_json::to_string_pretty(self)
     }
 }
 

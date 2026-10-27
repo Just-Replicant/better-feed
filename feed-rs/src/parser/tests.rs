@@ -590,3 +590,44 @@ fn max_entries_is_enforced() {
     assert_eq!(ParseLimits::untrusted().max_entries, Some(10_000));
     assert_eq!(ParseLimits::default().max_entries, None);
 }
+
+// Regression (found by the new fuzz targets): a second XML declaration naming a different encoding, or an
+// over-long first declaration, made quick-xml panic in DecodingReader::set_encoding
+#[test]
+fn late_or_long_xml_declarations_do_not_panic() {
+    let fixture = test::fixture_as_raw("rss1/rss_1.0_debian.xml");
+    for (name, data) in [
+        (
+            "second declaration",
+            [&fixture[..], b"<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?>"].concat(),
+        ),
+        (
+            "declaration after content",
+            b"<rss version=\"2.0\"><?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><channel><title>t</title></channel></rss>".to_vec(),
+        ),
+        (
+            "long first declaration",
+            format!(
+                "<?xml version=\"1.0\"{}encoding=\"ISO-8859-1\"?><rss version=\"2.0\"><channel><title>caf\u{e9}</title></channel></rss>",
+                " ".repeat(100)
+            )
+            .into_bytes(),
+        ),
+        ("UTF-16 BOM with a conflicting declaration", {
+            let text = "<?xml version=\"1.0\" encoding=\"UTF-16BE\"?><rss version=\"2.0\"><channel><title>t</title></channel></rss>";
+            let mut bytes = vec![0xFF, 0xFE];
+            bytes.extend(text.encode_utf16().flat_map(|u| u.to_le_bytes()));
+            bytes
+        }),
+    ] {
+        // Errors are fine, panics are not
+        let result = std::panic::catch_unwind(|| parser::parse(data.as_slice()).map(|f| f.entries.len()));
+        assert!(result.is_ok(), "{name} panicked");
+    }
+
+    // Short, leading declarations still switch the encoding
+    let mut latin1 = b"<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><rss version=\"2.0\"><channel><title>caf".to_vec();
+    latin1.push(0xE9);
+    latin1.extend(b"</title></channel></rss>");
+    assert_eq!(parser::parse(latin1.as_slice()).unwrap().title.unwrap().content, "caf\u{e9}");
+}

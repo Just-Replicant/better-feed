@@ -353,6 +353,8 @@ struct SourceState<R: BufRead> {
     next: XmlResult<Option<XmlEvent>>,
     // An event stashed while coalescing text (e.g. the start tag terminating a run of text and entity references)
     pending_text: Option<XmlEvent>,
+    // Whether any event has been read yet (an XML declaration is only honoured as the very first event)
+    started: bool,
     current_depth: u32,
     base_uris: Vec<(u32, Url)>,
     default_namespace: NS,
@@ -374,6 +376,7 @@ impl<R: BufRead> SourceState<R> {
             buf_event,
             next: Ok(None),
             pending_text: None,
+            started: false,
             current_depth: 0,
             base_uris,
             default_namespace: NS::Unknown,
@@ -396,11 +399,14 @@ impl<R: BufRead> SourceState<R> {
 
         loop {
             let (ns_resolution, event) = reader.read_resolved_event_into(&mut self.buf_event)?;
+            let first_event = !std::mem::replace(&mut self.started, true);
 
             match event {
                 // XML declaration for the encoding
                 Event::Decl(ref decl) => {
-                    if let Some(encoding) = decl.encoder() {
+                    if let Some(encoding) = decl.encoder()
+                        && can_switch_encoding(first_event, reader.get_ref().encoding().name() == "UTF-8", reader.buffer_position())
+                    {
                         reader.get_mut().set_encoding(encoding);
                     }
                 }
@@ -662,6 +668,21 @@ impl NS {
             _ => NS::Unknown,
         }
     }
+}
+
+// quick-xml's DecodingReader can only switch encoding while its 64-byte look-ahead prefix (which holds the XML
+// declaration) has not been drained, and panics otherwise. The declared encoding is therefore only applied when:
+// * the declaration is the first event (a declaration later in the document is malformed and ignored),
+// * the encoding detected so far is ASCII-compatible UTF-8 (with a UTF-16 BOM or pattern, the detected encoding wins,
+//   as the XML spec requires), and
+// * the declaration ends within the prefix (allowing for a 3 byte UTF-8 BOM that is not counted in the position).
+// Otherwise the document keeps being decoded with the detected encoding; non-UTF-8 bytes then produce an error rather
+// than a panic.
+const DECODER_PREFIX_BYTES: u64 = 64;
+const UTF8_BOM_BYTES: u64 = 3;
+
+fn can_switch_encoding(first_event: bool, current_is_utf8: bool, decl_end: u64) -> bool {
+    first_event && current_is_utf8 && decl_end + UTF8_BOM_BYTES <= DECODER_PREFIX_BYTES
 }
 
 /// Combination of a name and value (e.g. attribute name + value)

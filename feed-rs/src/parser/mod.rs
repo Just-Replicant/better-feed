@@ -137,6 +137,9 @@ pub struct ParseLimits {
     pub max_extension_nodes: usize,
     /// Maximum bytes of text kept per extension node (default 1 MiB). Longer text is truncated at a character boundary.
     pub max_extension_text_bytes: usize,
+    /// Maximum number of entries kept (default unlimited). Parsing stops once this many entries have been read, so the
+    /// rest of the input is not processed; feed-level elements after that point are not seen.
+    pub max_entries: Option<usize>,
 }
 
 impl Default for ParseLimits {
@@ -146,20 +149,28 @@ impl Default for ParseLimits {
             max_extension_depth: 32,
             max_extension_nodes: 1_000_000,
             max_extension_text_bytes: 1024 * 1024,
+            max_entries: None,
         }
     }
 }
 
 impl ParseLimits {
     /// Conservative limits for feeds fetched from third parties: 20 MiB of input, extension depth 16,
-    /// 100,000 extension nodes and 64 KiB of text per extension.
+    /// 100,000 extension nodes, 64 KiB of text per extension and 10,000 entries.
     pub fn untrusted() -> Self {
         ParseLimits {
             max_input_bytes: Some(20 * 1024 * 1024),
             max_extension_depth: 16,
             max_extension_nodes: 100_000,
             max_extension_text_bytes: 64 * 1024,
+            max_entries: Some(10_000),
         }
+    }
+
+    /// Sets [`ParseLimits::max_entries`]
+    pub fn with_max_entries(mut self, max: Option<usize>) -> Self {
+        self.max_entries = max;
+        self
     }
 
     /// Sets [`ParseLimits::max_input_bytes`]
@@ -232,7 +243,7 @@ impl Parser {
     ///
     /// ```
     pub fn parse<R: Read>(&self, source: R) -> ParseFeedResult<model::Feed> {
-        self.parse_inner(source, &mut EntrySink::collect())
+        self.parse_inner(source, &mut EntrySink::collect(self.limits.max_entries))
     }
 
     /// Parses the source, handing each entry to `on_entry` as soon as it has been parsed instead of collecting them.
@@ -579,22 +590,35 @@ type EntryCallback<'a> = &'a mut dyn FnMut(model::Entry) -> ControlFlow<()>;
 /// Destination for parsed entries: either collected on the feed, or handed to a callback as they are parsed
 pub(crate) struct EntrySink<'a> {
     streaming: Option<(&'a Parser, EntryCallback<'a>)>,
+    remaining: Option<usize>,
 }
 
 impl<'a> EntrySink<'a> {
-    fn collect() -> Self {
-        EntrySink { streaming: None }
+    fn collect(max_entries: Option<usize>) -> Self {
+        EntrySink {
+            streaming: None,
+            remaining: max_entries,
+        }
     }
 
     fn streaming(parser: &'a Parser, callback: EntryCallback<'a>) -> Self {
         EntrySink {
             streaming: Some((parser, callback)),
+            remaining: parser.limits.max_entries,
         }
     }
 
     /// Adds an entry; a `Break` result means the caller wants no more entries, so parsing should stop
     pub(crate) fn push(&mut self, feed: &mut model::Feed, mut entry: model::Entry) -> ControlFlow<()> {
-        match &mut self.streaming {
+        // Entries beyond ParseLimits::max_entries are dropped and parsing stops
+        if let Some(remaining) = self.remaining.as_mut() {
+            if *remaining == 0 {
+                return ControlFlow::Break(());
+            }
+            *remaining -= 1;
+        }
+
+        let flow = match &mut self.streaming {
             None => {
                 feed.entries.push(entry);
                 ControlFlow::Continue(())
@@ -603,7 +627,8 @@ impl<'a> EntrySink<'a> {
                 parser.finish_entry(&mut entry);
                 callback(entry)
             }
-        }
+        };
+        if self.remaining == Some(0) { ControlFlow::Break(()) } else { flow }
     }
 }
 

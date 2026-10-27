@@ -553,3 +553,40 @@ fn parse_with_can_stop_early() {
         .unwrap();
     assert_eq!(ids, vec!["1"]);
 }
+
+// Q2/F3 follow-up: ParseLimits::max_entries caps the number of entries and stops parsing
+#[test]
+fn max_entries_is_enforced() {
+    use crate::parser::ParseLimits;
+    use std::ops::ControlFlow;
+
+    let mut xml = String::from(r#"<rss version="2.0"><channel><title>t</title>"#);
+    for i in 0..10 {
+        xml.push_str(&format!("<item><title>{i}</title></item>"));
+    }
+    xml.push_str("<broken"); // never reached when the limit stops parsing first
+
+    let parser = parser::Builder::new().limits(ParseLimits::default().with_max_entries(Some(3))).build();
+    let feed = parser.parse(xml.as_bytes()).unwrap();
+    let titles: Vec<_> = feed.entries.iter().map(|e| e.title.as_ref().unwrap().content.as_str()).collect();
+    assert_eq!(titles, vec!["0", "1", "2"]);
+
+    let mut streamed = 0;
+    parser
+        .parse_with(xml.as_bytes(), |_| {
+            streamed += 1;
+            ControlFlow::Continue(())
+        })
+        .unwrap();
+    assert_eq!(streamed, 3);
+
+    // JSON too, and zero means no entries at all
+    let json = r#"{"version":"https://jsonfeed.org/version/1.1","title":"j","items":[{"id":"1"},{"id":"2"}]}"#;
+    let none = parser::Builder::new().limits(ParseLimits::default().with_max_entries(Some(0))).build();
+    let feed = none.parse(json.as_bytes()).unwrap();
+    assert!(feed.entries.is_empty());
+    assert_eq!(feed.title.unwrap().content, "j");
+
+    assert_eq!(ParseLimits::untrusted().max_entries, Some(10_000));
+    assert_eq!(ParseLimits::default().max_entries, None);
+}

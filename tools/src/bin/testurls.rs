@@ -57,11 +57,7 @@ fn main() -> ExitCode {
         println!("  failed: {url}");
     }
 
-    if failed.is_empty() {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::FAILURE
-    }
+    if failed.is_empty() { ExitCode::SUCCESS } else { ExitCode::FAILURE }
 }
 
 // Fetches and parses one URL, returning the number of entries or a description of the failure

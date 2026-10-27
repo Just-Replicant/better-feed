@@ -25,10 +25,10 @@ fn main() {
         match parser.parse(data.as_slice()) {
             Ok(mut feed) => {
                 // Generated (random) IDs are replaced by the test, so keep the old ones to avoid churn
-                if let Ok(old) = fs::read(&json_path) {
-                    if let Ok(old) = serde_json::from_slice::<Feed>(&old) {
-                        keep_generated_ids(&old, &mut feed);
-                    }
+                if let Ok(old) = fs::read(&json_path)
+                    && let Ok(old) = serde_json::from_slice::<Feed>(&old)
+                {
+                    keep_generated_ids(&old, &mut feed);
                 }
                 let json = serde_json::to_string(&feed).unwrap();
                 fs::write(json_path, json).unwrap();

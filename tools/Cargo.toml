@@ -5,6 +5,7 @@ edition = "2024"
 rust-version = "1.89"
 authors = ["Mark Pritchard <mpritcha@gmail.com>"]
 publish = false
+license = "MIT"
 
 [dependencies]
 better-feed = { path = "../feed-rs" }

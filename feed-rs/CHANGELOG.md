@@ -40,15 +40,17 @@ This release fixes several crashes on untrusted input and contains **breaking ch
 - Attribute values were not escaped when XHTML / XML content was re-serialised, allowing attribute injection. (C5)
 - The `sanitize` feature tests did not compile and clippy errors in test code went unnoticed. (C6)
 - With `sanitize`, Media RSS titles, descriptions and texts were not sanitised; extension text can now be sanitised
-  with `Builder::sanitize_extensions(true)`. (C7)
+  with `Builder::sanitize_extensions(true)`. RSS image titles and descriptions stay plain text. (C7)
 - iTunes episode metadata (duration, image, author, episode, season) was dropped unless the item also had
   `itunes:title` or `itunes:summary`. (B1)
 - RSS with no `version`, or versions such as `2.01`, ` 2.0`, `0.93` and `0.94`, was rejected. (B3)
 - XML errors while reading the root element were reported as "no root element". (B4)
-- More than 8 KiB of leading whitespace hid the feed root. (B5)
+- More than 8 KiB of leading whitespace hid the feed root. A leading UTF-8 BOM is skipped the same way. (B5)
 - JSON Feed: numeric item ids failed the whole feed; relative URLs were never resolved (now against the builder's
-  base URI or `feed_url`). (B6)
-- A `podcast:person` without a role was dropped (the spec default is "host"); "Misc." groups are accepted. (B7)
+  base URI or `feed_url`). `expired` is mapped onto `Feed::expired`; `user_comment` stays an extension
+  (`Feed::json_user_comment`) because the spec says it is not for display. (B6)
+- A `podcast:person` without a role was dropped (the spec default is "host"); "Misc." groups are accepted.
+  `Builder::strict(true)` fails the feed on an unknown role or group instead of keeping the element. (B7)
 - RSS `<image>` sizes above the RSS 2.0 maxima (144 x 400) were discarded. (B11)
 - A second or over-long XML declaration (`<?xml … encoding=… ?>` after the prolog) could panic inside quick-xml
   ("set_encoding() called after prefix buffer was drained"); found by the new fuzz targets.
@@ -60,10 +62,10 @@ This release fixes several crashes on untrusted input and contains **breaking ch
 - `ParseLimits` (`Builder::limits`) with `max_input_bytes`, `max_extension_depth`, `max_extension_nodes`,
   `max_extension_text_bytes` and `max_entries`, plus a `ParseLimits::untrusted()` preset. (F3, Q2)
 - `Builder::capture_extensions(false)` to skip extension capture entirely. (Q2)
-- `Parser::parse_with(source, |entry| ControlFlow)` streams entries to a callback and can stop early; on a
-  13 MB / 50,000-item feed peak memory drops from about 200 MB to 18 MB. (F6)
-- `writer::to_atom`, `writer::to_json_feed` and `writer::to_json_feed_pretty` serialise a `Feed` as Atom 1.0 or
-  JSON Feed 1.1. (F7)
+- `Parser::parse_with(source, |entry| ControlFlow)` streams entries to a callback and can stop early. For XML, peak
+  memory on a 13 MB / 50,000-item feed drops from about 200 MB to 18 MB. JSON Feed is still read as a whole document. (F6)
+- `writer::to_atom`, `writer::to_rss`, `writer::to_json_feed` and `writer::to_json_feed_pretty` serialise a `Feed` as
+  Atom 1.0, RSS 2.0 or JSON Feed 1.1, including media and captured extensions. (F7)
 - Extension lookups on `Feed` and `Entry` (`extension`, `extensions_named`, `extensions_in`, `extension_text`), the
   `model::ns` namespace constants and helpers on `Extension` (`named`, `is`, `attr`, `attr_ns`, `child`,
   `children_named`, `all_text`). (F1)
@@ -90,8 +92,8 @@ This release fixes several crashes on untrusted input and contains **breaking ch
 
 - Property tests (proptest), cargo-fuzz targets, per-format extension tests and criterion benchmarks. (Q4, Q5, F5)
 - GitHub Actions rewritten: pull-request CI on stable, MSRV, beta and nightly with all features, clippy on all
-  targets, rustdoc with `-D warnings`, security audit, semver checks and coverage; release-plz gated on CI with
-  `semver_check`; weekly fuzzing. The unused GitLab CI file was removed. (D1, D2, D6)
+  targets, rustdoc with `-D warnings`, security audit, cargo-deny, semver checks and coverage; release-plz gated on CI
+  with `semver_check`; weekly fuzzing. The unused GitLab CI file was removed. (D1, D2, D6)
 - Rustfmt and the tools crate moved to edition 2024; the tools crate is `publish = false`. (Q6, D3)
 - New READMEs, a root licence file and CONTRIBUTING.md. (D5)
 

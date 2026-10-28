@@ -101,6 +101,11 @@ pub struct Feed {
     pub rights: Option<Text>,
     /// RSS 2 (optional): It's a number of minutes that indicates how long a channel can be cached before refreshing from the source.
     pub ttl: Option<u32>,
+    /// JSON Feed (optional): `true` when the feed will not be updated again.
+    ///
+    /// Absent (`None`) when the feed did not say. A value that is not a boolean is left on [`Feed::extensions`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expired: Option<bool>,
     /// Podcast: People associated with this channel
     pub people: Vec<PodcastPerson>,
 
@@ -137,6 +142,7 @@ impl Feed {
             rating: None,
             rights: None,
             ttl: None,
+            expired: None,
             people: Vec::new(),
             entries: Vec::new(),
             extensions: Vec::new(),

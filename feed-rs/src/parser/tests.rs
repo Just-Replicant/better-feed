@@ -443,6 +443,19 @@ fn large_leading_whitespace_is_skipped() {
     assert_eq!(parser::parse(bom.as_bytes()).unwrap().title.unwrap().content, "bom");
 }
 
+
+// RSS image title and description are plain text (alt and title attributes), including when sanitize is enabled
+#[test]
+fn rss_image_text_stays_plain() {
+    let xml = r#"<rss version="2.0"><channel><title>t</title><image>
+        <url>http://a/logo.png</url><title>Tom &amp; Jerry</title><link>http://a/</link>
+        <description>&lt;script&gt;alert(1)&lt;/script&gt;Logo</description>
+    </image></channel></rss>"#;
+    let logo = parser::parse(xml.as_bytes()).unwrap().logo.unwrap();
+    assert_eq!(logo.title.as_deref(), Some("Tom & Jerry"));
+    assert_eq!(logo.description.as_deref(), Some("<script>alert(1)</script>Logo"));
+}
+
 // Regression (B11): RSS image sizes above the spec maxima (144 x 400) were silently discarded
 #[test]
 fn rss_image_dimensions_are_kept() {

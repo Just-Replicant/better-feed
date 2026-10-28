@@ -102,6 +102,12 @@ fn test_broken() {
     assert_eq!(ext.name, "person");
     assert_eq!(ext.attr("role"), Some("ThisIsNotAValidRole"));
     assert_eq!(ext.text.as_deref(), Some("Adam Leventhal"));
+
+    // strict restores the earlier behaviour: the first unknown role fails the feed
+    match parser::Builder::new().strict(true).build().parse(broken_rss.as_bytes()) {
+        Err(ParseFeedError::ParseError(ParseErrorKind::UnknownEnumVariant { .. })) => {}
+        other => panic!("expected UnknownEnumVariant, got {other:?}"),
+    }
 }
 
 // Regression (B7): role and group default per the spec, are case-insensitive, and bad values do not fail the feed

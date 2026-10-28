@@ -733,7 +733,11 @@ impl Generator {
     }
 }
 
-/// Represents a a link to an image.
+/// Represents a link to an image.
+///
+/// `title` and `description` are plain text (an RSS image uses them as the alt and title of the rendered
+/// `<img>`). They are not HTML, so the sanitiser does not touch them: running them through ammonia would turn
+/// characters such as `&` into entities and change the text.
 ///
 /// [Atom spec]:  http://www.atomenabled.org/developers/syndication/#optionalFeedElements
 /// [RSS 2 spec]: https://validator.w3.org/feed/docs/rss2.html#ltimagegtSubelementOfLtchannelgt

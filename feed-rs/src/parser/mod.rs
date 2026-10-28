@@ -409,17 +409,24 @@ impl Parser {
 }
 
 // Finds the first '<' or '{' in the input without consuming it, so the matching parser sees the whole document.
-// Buffers holding only ASCII whitespace are skipped, so large amounts of leading whitespace do not hide the root.
+// A leading UTF-8 BOM and buffers holding only ASCII whitespace are skipped, so they do not hide the root.
 fn sniff_format<R: Read>(input: &mut BufReader<R>) -> ParseFeedResult<Option<u8>> {
+    let mut at_start = true;
     loop {
         let buffer = input.fill_buf()?;
         if buffer.is_empty() {
             return Ok(None);
         }
-        if let Some(b) = buffer.iter().find(|b| **b == b'<' || **b == b'{') {
+        let mut offset = 0;
+        if at_start && buffer.starts_with(&[0xEF, 0xBB, 0xBF]) {
+            offset = 3;
+        }
+        at_start = false;
+        let window = &buffer[offset..];
+        if let Some(b) = window.iter().find(|b| **b == b'<' || **b == b'{') {
             return Ok(Some(*b));
         }
-        if !buffer.iter().all(u8::is_ascii_whitespace) {
+        if !window.iter().all(u8::is_ascii_whitespace) {
             return Ok(None);
         }
         let len = buffer.len();

@@ -208,6 +208,8 @@ pub struct Parser {
     sanitize_extensions: bool,
     capture_extensions: bool,
     limits: ParseLimits,
+    /// Unknown podcast:person role or group fails the parse instead of being kept as an extension
+    strict: bool,
     timestamp_parser: Box<TimestampParser>,
 }
 
@@ -445,6 +447,7 @@ pub struct Builder {
     sanitize_extensions: bool,
     capture_extensions: bool,
     limits: ParseLimits,
+    strict: bool,
     timestamp_parser: Box<TimestampParser>,
 }
 
@@ -469,6 +472,7 @@ impl Builder {
             sanitize_extensions: self.sanitize_extensions,
             capture_extensions: self.capture_extensions,
             limits: self.limits,
+            strict: self.strict,
             timestamp_parser: self.timestamp_parser,
         }
     }
@@ -532,6 +536,15 @@ impl Builder {
         self
     }
 
+    /// Reject the feed when a podcast:person role or group is not in the Podcasting 2.0 taxonomy (default alse).
+    ///
+    /// By default that element is kept as an extension and the rest of the feed is parsed. 	rue restores the
+    /// earlier behaviour of failing the whole feed on the first unknown value.
+    pub fn strict(mut self, flag: bool) -> Self {
+        self.strict = flag;
+        self
+    }
+
     /// Registers a custom timestamp parser
     pub fn timestamp_parser<F>(mut self, ts_parser: F) -> Self
     where
@@ -552,6 +565,7 @@ impl Default for Builder {
             sanitize_extensions: false,
             capture_extensions: true,
             limits: ParseLimits::default(),
+            strict: false,
             timestamp_parser: Box::new(util::parse_timestamp_lenient),
         }
     }

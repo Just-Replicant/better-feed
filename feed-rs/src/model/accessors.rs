@@ -244,6 +244,13 @@ fn value_block(e: &Extension) -> Option<ValueBlock> {
 }
 
 impl Feed {
+    /// JSON Feed `user_comment`: a note for someone reading the raw JSON.
+    ///
+    /// The JSON Feed spec says this is not for display in a reader, so it is kept as an extension rather than a field.
+    pub fn json_user_comment(&self) -> Option<&str> {
+        self.extension_text(Some(ns::JSON_FEED), "user_comment")
+    }
+
     /// `sy:updatePeriod` (hourly, daily, weekly, monthly or yearly), lower-cased.
     pub fn update_period(&self) -> Option<String> {
         self.extension_text(Some(ns::SYNDICATION), "updatePeriod").map(str::to_ascii_lowercase)

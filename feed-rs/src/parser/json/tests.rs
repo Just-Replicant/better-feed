@@ -158,6 +158,7 @@ fn test_unknown_keys_are_kept() {
     assert_eq!(feed.extensions[0].name, "user_comment");
     assert_eq!(feed.extensions[0].namespace.as_deref(), Some("https://jsonfeed.org"));
     assert_eq!(feed.extensions[0].text.as_deref(), Some("hello"));
+    assert_eq!(feed.json_user_comment(), Some("hello"));
     // "image" is a known item field, so it is mapped into the model rather than kept as an extension
     assert!(feed.entries[0].extensions.is_empty());
     assert_eq!(feed.entries[0].media[0].thumbnails[0].image.uri, "https://example.com/a.png");
@@ -210,6 +211,18 @@ fn test_spec_fields_ids_and_relative_urls() {
     assert_eq!(feed.entries[1].id, "4.5");
     // A null id gets a generated one
     assert!(!feed.entries[2].id.is_empty());
+
+    let expired = r#"{"version":"https://jsonfeed.org/version/1.1","title":"t","expired":true,"user_comment":"raw note","items":[]}"#;
+    let expired_feed = parser::parse(expired.as_bytes()).unwrap();
+    assert_eq!(expired_feed.expired, Some(true));
+    assert_eq!(expired_feed.json_user_comment(), Some("raw note"));
+    assert!(expired_feed.extensions.iter().all(|extension| extension.name != "expired"));
+
+    // A non-boolean expired value must not fail the feed, and must not be dropped
+    let odd = r#"{"version":"https://jsonfeed.org/version/1.1","title":"t","expired":"maybe","items":[]}"#;
+    let odd_feed = parser::parse(odd.as_bytes()).unwrap();
+    assert_eq!(odd_feed.expired, None);
+    assert_eq!(odd_feed.extension_text(Some(crate::model::ns::JSON_FEED), "expired"), Some("maybe"));
 
     // An explicit base URI takes precedence over feed_url
     let json = r#"{"version": "https://jsonfeed.org/version/1", "title": "t", "items": [{ "id": "1", "url": "a" }]}"#;

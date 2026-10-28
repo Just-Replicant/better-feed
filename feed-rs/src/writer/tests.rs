@@ -269,3 +269,17 @@ fn rss_round_trip_keeps_items_media_and_extensions() {
     assert_eq!(again.entries[0].media[0].title.as_ref().unwrap().content, "Clip");
     assert_eq!(again.entries[0].extension(Some("urn:x"), "extra").unwrap().attr("k"), Some("v"));
 }
+
+#[test]
+fn json_feed_writes_expired_extensions_and_banner() {
+    let json = r#"{"version":"https://jsonfeed.org/version/1.1","title":"t","expired":true,"user_comment":"note","extra":7,
+        "items":[{"id":"1","image":"https://a/i.png","banner_image":"https://a/b.png","content_text":"hi","_flag":true}]}"#;
+    let feed = parser::parse(json.as_bytes()).unwrap();
+    let out: serde_json::Value = serde_json::from_str(&to_json_feed(&feed).unwrap()).unwrap();
+    assert_eq!(out["expired"], true);
+    assert_eq!(out["user_comment"], "note");
+    assert_eq!(out["extra"], 7);
+    assert_eq!(out["items"][0]["image"], "https://a/i.png");
+    assert_eq!(out["items"][0]["banner_image"], "https://a/b.png");
+    assert_eq!(out["items"][0]["_flag"], true);
+}

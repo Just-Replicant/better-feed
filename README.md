@@ -1,7 +1,7 @@
 # better-feed
 
 A lenient feed parser for Rust (Atom, RSS 0.9x/1.0/2.0, JSON Feed) with lossless extension capture, a streaming API,
-and Atom / JSON Feed writers.
+and Atom, RSS 2.0 and JSON Feed writers.
 
 | Directory | Contents |
 |-----------|----------|
@@ -15,6 +15,7 @@ and Atom / JSON Feed writers.
 cargo run -p tools --bin better-feed -- parse https://example.com/feed.xml          # summary
 cargo run -p tools --bin better-feed -- parse feed.xml --json --pretty              # parsed model as JSON
 cargo run -p tools --bin better-feed -- parse feed.xml --atom                       # convert to Atom
+cargo run -p tools --bin better-feed -- parse feed.xml --rss                        # convert to RSS 2.0
 cargo run -p tools --bin better-feed -- parse - --json-feed < feed.xml              # convert stdin to JSON Feed
 cat urls.txt | cargo run -p tools --bin better-feed -- check                        # fetch and parse many URLs
 ```

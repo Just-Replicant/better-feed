@@ -5,7 +5,7 @@
 
 A lenient parser for Atom, RSS (0.9x, 1.0, 2.0) and JSON Feed (1.0, 1.1) that maps every format onto one model,
 including iTunes, Podcasting 2.0, Dublin Core and Media RSS. Anything without a dedicated field is kept, losslessly,
-as an extension tree. It can also write feeds back out as Atom or JSON Feed.
+as an extension tree. It can also write feeds back out as Atom, RSS 2.0 or JSON Feed.
 
 ```toml
 [dependencies]
@@ -46,8 +46,8 @@ let parser = Builder::new()
 
 ### Streaming large feeds
 
-`Parser::parse_with` hands each entry to a callback as soon as it is parsed, so memory stays bounded by one entry,
-and you can stop early:
+`Parser::parse_with` hands each entry to a callback as soon as it is parsed, and you can stop early. For XML, memory
+stays bounded by one entry. JSON Feed is read into a document first, so a large JSON feed is still fully buffered:
 
 ```rust
 use std::ops::ControlFlow;
@@ -63,7 +63,7 @@ let feed = Builder::new().build().parse_with(xml.as_bytes(), |entry| {
 # Ok::<(), better_feed::parser::ParseFeedError>(())
 ```
 
-On a 13 MB, 50,000-item feed this lowers peak memory from about 200 MB to 18 MB.
+On a 13 MB, 50,000-item RSS feed this lowers peak memory from about 200 MB to 18 MB.
 
 ## Extensions
 
@@ -102,6 +102,8 @@ use better_feed::{parser, writer};
 # let xml = r#"<rss version="2.0"><channel><title>t</title></channel></rss>"#;
 let feed = parser::parse(xml.as_bytes())?;
 let atom: String = writer::to_atom(&feed);
+let rss: String = writer::to_rss(&feed);
+assert!(rss.contains("<rss version=\"2.0\""));
 let json_feed: String = writer::to_json_feed(&feed).unwrap();
 let model_json: String = feed.to_json().unwrap(); // the parsed model itself
 # Ok::<(), better_feed::parser::ParseFeedError>(())
@@ -111,8 +113,8 @@ let model_json: String = feed.to_json().unwrap(); // the parsed model itself
 
 With the `sanitize` feature, HTML content, summaries, titles, rights and media text are cleaned with
 [ammonia](https://crates.io/crates/ammonia) by default (`Builder::sanitize_content(false)` turns it off;
-`Builder::sanitize_extensions(true)` extends it to extension text). `text/plain` fields are never modified.
-`parser::SANITIZE_AVAILABLE` tells you whether the feature is compiled in.
+`Builder::sanitize_extensions(true)` extends it to extension text). `text/plain` fields are never modified,
+including RSS image titles and descriptions. `parser::SANITIZE_AVAILABLE` tells you whether the feature is compiled in.
 
 ## Differences from feed-rs
 
@@ -121,7 +123,9 @@ better-feed is a fork of [feed-rs](https://github.com/feed-rs/feed-rs). The main
 - Unmapped elements and JSON Feed keys are kept as lossless `Extension` trees (namespace, prefix, attributes, text,
   tail, children), with lookups and typed accessors, instead of being dropped.
 - Resource limits (`ParseLimits`) and iterative extension capture, so deeply nested input cannot overflow the stack.
-- A streaming `parse_with` API and a writer for Atom and JSON Feed.
+- A streaming `parse_with` API (XML is incremental; JSON Feed is buffered) and writers for Atom, RSS 2.0 and JSON Feed.
+- `Builder::strict(true)` fails a feed on an unknown `podcast:person` role or group. The default keeps that element
+  as an extension.
 - More lenient parsing of real-world feeds: RSS without a version, numeric JSON Feed ids, relative JSON Feed URLs,
   unknown `podcast:person` roles, `M:SS` iTunes durations, large RSS image sizes, and more (see the
   [changelog](CHANGELOG.md)).

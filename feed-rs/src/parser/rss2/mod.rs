@@ -76,7 +76,7 @@ fn handle_channel<R: BufRead>(parser: &Parser, channel: Element<R>, sink: &mut E
 
             (NS::Itunes, _) => handle_itunes_channel_element(child, &mut feed)?,
 
-            (NS::Podcast, _) => handle_podcast_channel_element(child, &mut feed)?,
+            (NS::Podcast, _) => handle_podcast_channel_element(child, &mut feed, parser.strict)?,
 
             _ => feed.extensions.extend(capture(child)?),
         }
@@ -239,7 +239,7 @@ fn handle_item<R: BufRead>(parser: &Parser, element: Element<R>) -> ParseFeedRes
             (NS::MediaRSS, _) => mediarss.handle_entry_mediarss_element(child)?,
 
             // Podcast elements populate the default MediaObject
-            (NS::Podcast, _) => handle_podcast_item_element(child, &mut podcast_media_obj, &mut entry.extensions)?,
+            (NS::Podcast, _) => handle_podcast_item_element(child, &mut podcast_media_obj, &mut entry.extensions, parser.strict)?,
 
             // Comments can use the Well Formed Web NS or the RSS comments element
             // According to https://validator.w3.org/feed/docs/warning/CommentRSS.html we need to support both

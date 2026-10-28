@@ -443,7 +443,6 @@ fn large_leading_whitespace_is_skipped() {
     assert_eq!(parser::parse(bom.as_bytes()).unwrap().title.unwrap().content, "bom");
 }
 
-
 // RSS image title and description are plain text (alt and title attributes), including when sanitize is enabled
 #[test]
 fn rss_image_text_stays_plain() {

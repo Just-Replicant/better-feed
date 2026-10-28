@@ -4,9 +4,19 @@ Repo: https://github.com/Just-Replicant/better-feed (cloned 27 Oct 2026, HEAD `f
 
 ## 0. Implementation status (branch `fixes-and-improvements`)
 
-All 41 items were implemented locally: 35 Done, 6 Partial, 0 Skipped. There are 41 commits on top of upstream `f47e137`, including this plan, and none were pushed.
-Every check passes: build, test (default and `--all-features`), `clippy --workspace --all-targets --all-features -D warnings`, `fmt --check`, `cargo doc -D warnings`, and MSRV 1.89.
-There is one extra fix the plan did not list, 7595dbb: fuzzing found a quick-xml panic on a second or over-long XML declaration. It now has a regression test.
+All 41 items are done. None were skipped. The commit hashes below are the original implementation: 41 commits on top of upstream `f47e137`, including this plan, and none were pushed. The six items that were only partial, plus a UTF-8 BOM gap in format sniffing, were closed afterwards; that work is in the working tree and is not one of those commits yet.
+Checks that pass on this tree: build, test (default and `--all-features`), `clippy --workspace --all-targets --all-features -D warnings`, `fmt --check`, `cargo doc -D warnings`, and MSRV 1.89.
+There is one extra fix the original plan did not list, 7595dbb: fuzzing found a quick-xml panic on a second or over-long XML declaration. It has a regression test.
+
+### Closed after the first pass
+
+- **C7.** Media title, description and texts are sanitised, and `Builder::sanitize_extensions` covers extension text. RSS image `title` and `description` stay plain text: they are the alt and title of the rendered image, and running them through ammonia would turn `&` into an entity. `rss_image_text_stays_plain` locks that in.
+- **B6.** `expired` is `Feed::expired` (a boolean or the strings `true`/`yes`/`false`/`no`; anything else stays an extension so one odd value cannot fail the feed). `user_comment` stays an extension, read with `Feed::json_user_comment()`, because the JSON Feed spec says that field is for people reading the raw file and must not be shown to readers. The JSON writer emits both.
+- **B7.** An unknown `podcast:person` role or group is still kept as an extension. `Builder::strict(true)` fails the feed on the first unknown value instead.
+- **D1.** CI runs `cargo audit` and `cargo deny check` (`deny.toml`: all features, advisories, licences, crates.io only). The tools crate declares `license = "MIT"` so deny can see it.
+- **F6.** `Parser::parse_with` is the streaming API. On a 13 MB / 50,000-item RSS feed peak memory drops from about 200 MB to 18 MB. JSON Feed is parsed by serde into a document first, so a large JSON feed is fully buffered; the docs say so. An iterator would have to suspend the pull parser across yields. The callback is the shape that fits.
+- **F7.** `writer::to_atom`, `writer::to_rss` and `writer::to_json_feed` write the core model, media (RSS `enclosure` and `media:*`, Atom enclosure links, JSON Feed attachments plus `image` / `banner_image`) and captured extensions. An extension whose name is a core element of the format being written is left out, so a captured `<atom:id>` cannot overwrite the model id on the way back. The `better-feed` CLI accepts `--rss`.
+- **B5, follow-up.** A leading UTF-8 BOM is skipped the same way as leading whitespace, including when the whitespace after it is longer than one read buffer.
 
 | ID | Status | Commit(s) | Notes |
 |---|---|---|---|
@@ -16,41 +26,41 @@ There is one extra fix the plan did not list, 7595dbb: fuzzing found a quick-xml
 | C4 | Done | 4a32a6f | Per-parse MediaRSS context |
 | C5 | Done | 286abc1 | Attribute values escaped; snapshots regenerated |
 | C6 | Done | 0927a68 | Sanitize tests compile and pass; clippy on all targets |
-| C7 | Partial | 0469ea8 | Media title/description/texts sanitised + `sanitize_extensions(bool)`; `Image.description` left as plain text |
+| C7 | Done | 0469ea8 | Media text sanitised; `sanitize_extensions(bool)`. Image title/description stay plain text (see above) |
 | B1 | Done | 66f5a40 | `itunes_only_metadata_is_kept` |
 | B2 | Done | b0e6495 | S, M:SS, H:MM:SS |
 | B3 | Done | eae757e | `rss_version_is_lenient` |
 | B4 | Done | eae757e | `root_xml_errors_are_reported` |
 | B5 | Done | eae757e | `large_leading_whitespace_is_skipped` |
-| B6 | Partial | 6c78165 | ids, URL resolution, image/banner/language/next_url/hubs mapped; `expired`, `user_comment` stay as extensions |
-| B7 | Partial | 46cd967 | Bad role/group kept as extension; no `strict` flag added |
+| B6 | Done | 6c78165 | ids, URLs, image/banner/language/next_url/hubs, and `expired`. `user_comment` is `Feed::json_user_comment()` |
+| B7 | Done | 46cd967 | Unknown role/group kept as an extension. `Builder::strict(true)` fails the feed instead |
 | B8 | Done | 48b5801 | prefix/namespace/tail/raw JSON value on extensions |
-| B9 | Done | a325d4f |  |
+| B9 | Done | a325d4f | `fixture_serde` skips `*.serde.json`, strips CR, and uses `sanitize_content(false)` |
 | B10 | Done | 2337e86 | Per-URL errors, timeout, summary |
 | B11 | Done | eb6c07a | `rss_image_dimensions_are_kept` |
-| B12 | Done | 801f384 |  |
+| B12 | Done | 801f384 | Removed the second `thumbnails` clone in `emit_media_objects` |
 | Q1 | Done | 4a32a6f | `Parser: Send + Sync` asserted |
 | Q2 | Done | 48b5801, d62d9c7 | `capture_extensions(bool)`, `ParseLimits` incl. `max_entries` |
 | Q3 | Done | 048146c, 4ac5938 | `#[non_exhaustive]`, public constructors, CHANGELOG rewritten, semver-checks in CI |
 | Q4 | Done | 6e043b4 | 6 per-format extension tests |
 | Q5 | Done | 4dfb6e7, e1752df | 8 proptests, 2 fuzz targets, weekly fuzz job; fuzzing found a quick-xml panic, fixed in 7595dbb |
-| Q6 | Done | 51475c2 |  |
+| Q6 | Done | 51475c2 | rustfmt and the tools crate on edition 2024; legacy `extern crate` removed |
 | Q7 | Done | 835ebc0 | Derived Debug + `to_json()`/`to_json_pretty()` |
 | Q8 | Done | 32c75e5 | Strict parse first, `Cow` fix-ups |
 | Q9 | Done | c165149 | `cargo doc -D warnings` clean |
-| D1 | Partial | c0df244 | Modern workflow (stable/1.89/beta/nightly, quality, audit, semver, coverage); uses `cargo audit`, not `cargo deny` |
+| D1 | Done | c0df244 | stable/1.89/beta/nightly, clippy, rustdoc, audit, cargo-deny, semver, coverage |
 | D2 | Done | 14b7815 | .gitlab-ci.yml removed |
-| D3 | Done | 73bd46d |  |
+| D3 | Done | 73bd46d | `tools` is `publish = false` |
 | D4 | Done | 30572c3 | Fixture-based tests therefore can't run from the crate tarball |
 | D5 | Done | 30eb272 | README examples are doctested |
-| D6 | Done | 6c6a3d8 |  |
-| F1 | Done | a6e4316 |  |
+| D6 | Done | 6c6a3d8 | release-plz waits for the CI job and runs `semver_check` |
+| F1 | Done | a6e4316 | `extension` / `extensions_named` / `extensions_in` / `extension_text`, plus `model::ns` |
 | F2 | Done | a6e4316, 10e7db9, 46cf143 | Typed accessors over extensions (geo, cloud, source, locked, funding, value, chapters, soundbite, alternateEnclosure, …) |
 | F3 | Done | 48b5801, d62d9c7 | `ParseLimits::untrusted()` preset |
 | F4 | Done | c49806a, e1752df | `better-feed parse|check` in the tools crate (not published) |
 | F5 | Done | b2a163a, e1752df | criterion benches; manual CI job |
-| F6 | Partial | 29b7579 | Callback API `Parser::parse_with` (not an iterator); peak memory 202 MB → 18 MB |
-| F7 | Partial | fd77ac4 | Atom 1.0 + JSON Feed 1.1 writers; no RSS writer, media/extensions not written |
+| F6 | Done | 29b7579 | `Parser::parse_with` callback. XML: 202 MB → 18 MB. JSON Feed stays fully buffered |
+| F7 | Done | fd77ac4 | Atom, RSS 2.0 and JSON Feed writers, including media and extensions |
 
 Not done locally: `cargo audit`, because it needs a git clone of the advisory DB. It runs in CI instead.
 
@@ -62,7 +72,9 @@ Not done locally: `cargo audit`, because it needs a git clone of the advisory DB
 - **Architecture**: `parser::Parser` sniffs `<` or `{`. XML goes through `xml::ElementSource`, a pull-iterator over quick-xml with a `RefCell` state, namespace mapping and an xml:base stack, and is then dispatched by root element to `atom`, `rss0`, `rss1` or `rss2`. Namespace handlers live in `itunes`, `podcast` and `mediarss`, which is stateful. JSON uses serde structs and is then converted. After parsing, missing IDs are filled in (SipHash of link and title, or a UUID) and content is optionally sanitized.
 - **Tests**: 89 unit tests, 1 integration test (`id_generator`), 5 sanitize tests (feature-gated), 4 doctests and an 80-fixture serde snapshot regression.
 
-## 2. What I ran (box: cargo 1.99.1)
+## 2. Baseline before the fixes (box: cargo 1.99.1, upstream `f47e137`)
+
+This is what the tree did when it was analysed, before the commits in section 0. It is not the current tree.
 
 | Check | Result |
 |---|---|
@@ -78,7 +90,9 @@ Not done locally: `cargo audit`, because it needs a git clone of the advisory DB
 
 Not checked: real-network behaviour of `tools/testurls` (no URL list is shipped), the GitHub Actions runs themselves (no GitHub access by design), MSRV 1.96.1 (only the box toolchain 1.99.1 was used), Windows CRLF behaviour, and fuzzing beyond the targeted probes.
 
-## 3. Prioritised plan
+## 3. Original plan
+
+Written against `f47e137`. Current status is section 0. Line numbers below are from that tree.
 
 Priority: P0 = fix now (crash, security, broken CI); P1 = next; P2 = quality; P3 = nice-to-have. Effort: S ≈ under ½ day, M ≈ 1–3 days, L ≈ a week or more.
 
@@ -148,7 +162,9 @@ Priority: P0 = fix now (crash, security, broken CI); P1 = next; P2 = quality; P3
 | F6 | Optional streaming/entry iterator API | Large feeds (tens of MB) are parsed fully into memory | `Parser::entries(reader)` returns a header plus an iterator of `Entry`; this reuses the pull model already in `xml::ElementSource`. | L | P3 |
 | F7 | Feed writer (serialize back to Atom/RSS/JSON Feed) | It would round-trip the extensions model and is useful for proxies and aggregators | Separate module or crate; start with JSON Feed and Atom. | L | P3 |
 
-## 4. Suggested sequencing
+## 4. Sequencing that was followed
+
+This is the order the work was done in. It is complete; section 0 is the status.
 
 1. **Week 1 (hotfix 3.0.2)**: C1, C2, C3, C4, C5 and C6, each with a regression test and the probe inputs above added as test cases.
 2. **Week 2 (3.1.0)**: B1, B2, B3, B4 and B6; Q1; Q2 and F3 (limits and opt-out); C7; D1, D2, D3 and D6.

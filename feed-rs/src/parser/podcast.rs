@@ -8,9 +8,9 @@ use std::io::BufRead;
 use url::Url;
 
 // Process <podcast> elements at channel level updating the Feed object as required
-pub(crate) fn handle_podcast_channel_element<R: BufRead>(element: Element<R>, feed: &mut Feed) -> ParseFeedResult<()> {
+pub(crate) fn handle_podcast_channel_element<R: BufRead>(element: Element<R>, feed: &mut Feed, strict: bool) -> ParseFeedResult<()> {
     match element.ns_and_tag() {
-        (NS::Podcast, "person") => if_some_then(handle_person(element, &mut feed.extensions)?, |person| feed.people.push(person)),
+        (NS::Podcast, "person") => if_some_then(handle_person(element, &mut feed.extensions, strict)?, |person| feed.people.push(person)),
         _ => feed.extensions.extend(capture(element)?),
     }
 
@@ -22,9 +22,10 @@ pub(crate) fn handle_podcast_item_element<R: BufRead>(
     element: Element<R>,
     media_obj: &mut MediaObject,
     extensions: &mut Vec<Extension>,
+    strict: bool,
 ) -> ParseFeedResult<()> {
     match element.ns_and_tag() {
-        (NS::Podcast, "person") => if_some_then(handle_person(element, extensions)?, |person| media_obj.people.push(person)),
+        (NS::Podcast, "person") => if_some_then(handle_person(element, extensions, strict)?, |person| media_obj.people.push(person)),
 
         (NS::Podcast, "season") => if_some_then(common::handle_season(element), |season| media_obj.season = Some(season)),
 
@@ -42,13 +43,22 @@ pub(crate) fn handle_podcast_item_element<R: BufRead>(
 //
 // Per the spec the role defaults to "host" and the group to "cast". A role or group that is not in the
 // taxonomy does not fail the feed; the element is kept as an extension instead so nothing is lost.
-fn handle_person<R: BufRead>(element: Element<R>, extensions: &mut Vec<Extension>) -> ParseFeedResult<Option<PodcastPerson>> {
+// `strict` restores the earlier behaviour and fails the feed on the first unknown value.
+fn handle_person<R: BufRead>(element: Element<R>, extensions: &mut Vec<Extension>, strict: bool) -> ParseFeedResult<Option<PodcastPerson>> {
     let role = match element.attr_value("role") {
-        Some(role) => Role::parse(element.buffer_pos, role.trim()).ok(),
+        Some(role) => match Role::parse(element.buffer_pos, role.trim()) {
+            Ok(role) => Some(role),
+            Err(err) if strict => return Err(err),
+            Err(_) => None,
+        },
         None => Some(Role::Host),
     };
     let group = match element.attr_value("group") {
-        Some(group) => Group::parse(element.buffer_pos, group.trim()).ok(),
+        Some(group) => match Group::parse(element.buffer_pos, group.trim()) {
+            Ok(group) => Some(group),
+            Err(err) if strict => return Err(err),
+            Err(_) => None,
+        },
         None => Some(Group::default()),
     };
 

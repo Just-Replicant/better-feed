@@ -28,7 +28,13 @@ struct CoreEntry {
 }
 
 fn core(feed: &Feed, with_updated: bool, with_categories: bool) -> Core {
-    let mut links: Vec<_> = feed.links.iter().map(|l| l.href.clone()).collect();
+    // Enclosure links written for media objects are not part of the original link list
+    let mut links: Vec<_> = feed
+        .links
+        .iter()
+        .filter(|l| l.rel.as_deref() != Some("enclosure"))
+        .map(|l| l.href.clone())
+        .collect();
     links.sort();
     links.dedup();
     Core {
@@ -42,7 +48,12 @@ fn core(feed: &Feed, with_updated: bool, with_categories: bool) -> Core {
             .entries
             .iter()
             .map(|e| {
-                let mut links: Vec<_> = e.links.iter().map(|l| l.href.clone()).collect();
+                let mut links: Vec<_> = e
+                    .links
+                    .iter()
+                    .filter(|l| l.rel.as_deref() != Some("enclosure"))
+                    .map(|l| l.href.clone())
+                    .collect();
                 links.sort();
                 links.dedup();
                 CoreEntry {
@@ -90,7 +101,27 @@ fn atom_round_trip_preserves_core_fields_for_all_fixtures() {
         let atom = to_atom(&feed);
         let again = parser.parse(atom.as_bytes()).unwrap_or_else(|e| panic!("{name}: {e}\n{atom}"));
         assert_eq!(again.feed_type, FeedType::Atom);
-        assert_eq!(core(&again, feed.updated.is_some(), true), core(&feed, feed.updated.is_some(), true), "{name}");
+        // Extensions that Atom also understands (for example a captured <link>) may add links on the way back.
+        // Every original core value must still be there.
+        let (left, right) = (core(&again, feed.updated.is_some(), true), core(&feed, feed.updated.is_some(), true));
+        assert_eq!(left.id, right.id, "{name}");
+        assert_eq!(left.title, right.title, "{name}");
+        assert_eq!(left.updated, right.updated, "{name}");
+        assert_eq!(left.authors, right.authors, "{name}");
+        for link in &right.links {
+            assert!(left.links.contains(link), "{name}: lost feed link {link}");
+        }
+        assert_eq!(left.entries.len(), right.entries.len(), "{name}");
+        for (l, r) in left.entries.iter().zip(&right.entries) {
+            assert_eq!(
+                (&l.id, &l.title, &l.published, &l.authors, &l.categories, &l.summary, &l.content),
+                (&r.id, &r.title, &r.published, &r.authors, &r.categories, &r.summary, &r.content),
+                "{name}"
+            );
+            for link in &r.links {
+                assert!(l.links.contains(link), "{name}: lost entry link {link}");
+            }
+        }
     }
 }
 
@@ -161,4 +192,80 @@ fn json_feed_maps_links_by_rel() {
             .unwrap()
             .contains("\n  \"version\": \"https://jsonfeed.org/version/1.1\"")
     );
+}
+
+#[test]
+fn rss_round_trip_keeps_items_media_and_extensions() {
+    use crate::model::{Extension, ExtensionAttribute, MediaContent, MediaObject};
+
+    let xml = r#"<rss version="2.0" xmlns:x="urn:x"><channel>
+        <title>Channel</title><link>https://example.com/</link><description>About</description>
+        <x:note lang="en">hello</x:note>
+        <item>
+          <title>Hello</title><link>https://example.com/hello</link>
+          <description>Sum</description>
+          <content:encoded xmlns:content="http://purl.org/rss/1.0/modules/content/">&lt;p&gt;Body&lt;/p&gt;</content:encoded>
+          <enclosure url="https://example.com/a.mp3" length="12" type="audio/mpeg"/>
+          <guid>https://example.com/hello</guid>
+          <x:flag>1</x:flag>
+        </item>
+      </channel></rss>"#;
+    let parser = parser::Builder::new().sanitize_content(false).build();
+    let feed = parser.parse(xml.as_bytes()).unwrap();
+    let rss = to_rss(&feed);
+    let again = parser.parse(rss.as_bytes()).unwrap_or_else(|e| panic!("{e}\n{rss}"));
+
+    assert_eq!(again.title.as_ref().unwrap().content, "Channel");
+    assert_eq!(again.description.as_ref().unwrap().content, "About");
+    assert_eq!(again.extension(Some("urn:x"), "note").unwrap().text.as_deref(), Some("hello"));
+    assert_eq!(again.extension(Some("urn:x"), "note").unwrap().attr("lang"), Some("en"));
+    let entry = &again.entries[0];
+    assert_eq!(entry.title.as_ref().unwrap().content, "Hello");
+    assert_eq!(entry.summary.as_ref().unwrap().content, "Sum");
+    assert_eq!(entry.content.as_ref().unwrap().body.as_deref(), Some("<p>Body</p>"));
+    assert_eq!(entry.id, "https://example.com/hello");
+    assert_eq!(entry.extension(Some("urn:x"), "flag").unwrap().text.as_deref(), Some("1"));
+    let enclosure = entry
+        .media
+        .iter()
+        .flat_map(|media| media.content.iter())
+        .find_map(|content| content.url.as_ref())
+        .unwrap();
+    assert_eq!(enclosure.as_str(), "https://example.com/a.mp3");
+    assert!(rss.contains("media:content"), "{rss}");
+
+    // A media object that arrived as a field (not an enclosure link) is still written
+    let mut content = MediaContent::new();
+    content.url = Some("https://cdn.example/v.mp4".parse().unwrap());
+    content.content_type = Some("video/mp4".parse().unwrap());
+    content.size = Some(9);
+    let media = MediaObject {
+        title: Some(crate::model::Text::new("Clip".into())),
+        content: vec![content],
+        ..Default::default()
+    };
+    let mut built = crate::model::Feed::new(FeedType::RSS2);
+    built.title = Some(crate::model::Text::new("t".into()));
+    built.entries.push(crate::model::Entry {
+        id: "1".into(),
+        title: Some(crate::model::Text::new("item".into())),
+        media: vec![media],
+        extensions: vec![{
+            let mut extension = Extension::named(Some("urn:x"), "extra", Some("z".into()));
+            extension.prefix = Some("x".into());
+            extension.attributes.push(ExtensionAttribute {
+                name: "k".into(),
+                value: "v".into(),
+                prefix: None,
+                namespace: None,
+            });
+            extension
+        }],
+        ..Default::default()
+    });
+    let rss = to_rss(&built);
+    let again = parser.parse(rss.as_bytes()).unwrap_or_else(|e| panic!("{e}\n{rss}"));
+    assert_eq!(again.entries[0].media[0].content[0].url.as_ref().unwrap().as_str(), "https://cdn.example/v.mp4");
+    assert_eq!(again.entries[0].media[0].title.as_ref().unwrap().content, "Clip");
+    assert_eq!(again.entries[0].extension(Some("urn:x"), "extra").unwrap().attr("k"), Some("v"));
 }

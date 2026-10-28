@@ -8,10 +8,10 @@ use std::io::BufRead;
 use url::Url;
 
 // Process <podcast> elements at channel level updating the Feed object as required
-pub(crate) fn handle_podcast_channel_element<R: BufRead>(element: Element<R>, feed: &mut Feed) -> ParseFeedResult<()> {
+pub(crate) fn handle_podcast_channel_element<R: BufRead>(element: Element<R>, feed: &mut Feed, strict: bool) -> ParseFeedResult<()> {
     match element.ns_and_tag() {
-        (NS::Podcast, "person") => if_some_then(handle_person(element)?, |person| feed.people.push(person)),
-        _ => feed.extensions.push(capture(element)?),
+        (NS::Podcast, "person") => if_some_then(handle_person(element, &mut feed.extensions, strict)?, |person| feed.people.push(person)),
+        _ => feed.extensions.extend(capture(element)?),
     }
 
     Ok(())
@@ -22,9 +22,10 @@ pub(crate) fn handle_podcast_item_element<R: BufRead>(
     element: Element<R>,
     media_obj: &mut MediaObject,
     extensions: &mut Vec<Extension>,
+    strict: bool,
 ) -> ParseFeedResult<()> {
     match element.ns_and_tag() {
-        (NS::Podcast, "person") => if_some_then(handle_person(element)?, |person| media_obj.people.push(person)),
+        (NS::Podcast, "person") => if_some_then(handle_person(element, extensions, strict)?, |person| media_obj.people.push(person)),
 
         (NS::Podcast, "season") => if_some_then(common::handle_season(element), |season| media_obj.season = Some(season)),
 
@@ -32,32 +33,47 @@ pub(crate) fn handle_podcast_item_element<R: BufRead>(
 
         (NS::Podcast, "transcript") => if_some_then(handle_transcript(element), |transcript| media_obj.transcripts.push(transcript)),
 
-        _ => extensions.push(capture(element)?),
+        _ => extensions.extend(capture(element)?),
     }
 
     Ok(())
 }
 
 // Handles <podcast:person>
-fn handle_person<R: BufRead>(element: Element<R>) -> ParseFeedResult<Option<PodcastPerson>> {
-    if let Some(role) = element.attr_value("role") {
-        let role = Role::parse(element.buffer_pos, &role)?;
-        if let Some(name) = element.child_as_text() {
-            return Ok(Some(PodcastPerson {
-                name,
-                role,
-                group: element
-                    .attr_value("group")
-                    .map(|g| Group::parse(element.buffer_pos, &g))
-                    .transpose()?
-                    .unwrap_or_default(),
-                img: element.attr_value("img").and_then(|img| Url::parse(&img).ok()),
-                href: element.attr_value("href").and_then(|href| Url::parse(&href).ok()),
-            }));
-        }
-    }
+//
+// Per the spec the role defaults to "host" and the group to "cast". A role or group that is not in the
+// taxonomy does not fail the feed; the element is kept as an extension instead so nothing is lost.
+// `strict` restores the earlier behaviour and fails the feed on the first unknown value.
+fn handle_person<R: BufRead>(element: Element<R>, extensions: &mut Vec<Extension>, strict: bool) -> ParseFeedResult<Option<PodcastPerson>> {
+    let role = match element.attr_value("role") {
+        Some(role) => match Role::parse(element.buffer_pos, role.trim()) {
+            Ok(role) => Some(role),
+            Err(err) if strict => return Err(err),
+            Err(_) => None,
+        },
+        None => Some(Role::Host),
+    };
+    let group = match element.attr_value("group") {
+        Some(group) => match Group::parse(element.buffer_pos, group.trim()) {
+            Ok(group) => Some(group),
+            Err(err) if strict => return Err(err),
+            Err(_) => None,
+        },
+        None => Some(Group::default()),
+    };
 
-    Ok(None)
+    let (Some(role), Some(group)) = (role, group) else {
+        extensions.extend(capture(element)?);
+        return Ok(None);
+    };
+
+    Ok(element.child_as_text().map(|name| PodcastPerson {
+        name,
+        role,
+        group,
+        img: element.attr_value("img").and_then(|img| Url::parse(&img).ok()),
+        href: element.attr_value("href").and_then(|href| Url::parse(&href).ok()),
+    }))
 }
 
 // Handles <podcast:transcript>

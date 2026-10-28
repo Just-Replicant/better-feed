@@ -61,6 +61,32 @@ fn test_parse_npt() {
         Duration::from_millis(12 * 3600000 + 5 * 60000 + 35 * 1000 + 123)
     );
     assert_eq!(parse_npt("123.45").unwrap(), Duration::from_millis(123450));
+    assert_eq!(parse_npt(" npt=1:00:00 ").unwrap(), Duration::from_secs(3600));
+    assert_eq!(parse_npt("0.000000001").unwrap(), Duration::from_nanos(1));
+    assert_eq!(parse_npt("1.1234567891234").unwrap(), Duration::new(1, 123456789));
+}
+
+// Regression (C3): overflowing values panicked (unwrap on ParseIntError, multiply overflow)
+#[test]
+fn test_parse_npt_overflow_and_garbage() {
+    assert_eq!(parse_npt("99999999999999999999999"), None);
+    assert_eq!(parse_npt("9999999999999999:00:00"), None);
+    assert_eq!(parse_npt("18446744073709551615:00"), None);
+    assert_eq!(parse_npt("1.99999999999999999999999"), Some(Duration::new(1, 999999999)));
+    assert_eq!(parse_npt(""), None);
+    assert_eq!(parse_npt("abc"), None);
+    assert_eq!(parse_npt("1:2:3:4"), None);
+    assert_eq!(parse_npt("12s"), None);
+    assert_eq!(parse_npt("-5"), None);
+}
+
+// Regression (B2): iTunes durations in M:SS form were read as a number of seconds
+#[test]
+fn test_parse_itunes_durations() {
+    assert_eq!(parse_npt("12:34"), Some(Duration::from_secs(12 * 60 + 34)));
+    assert_eq!(parse_npt("90:00"), Some(Duration::from_secs(90 * 60)));
+    assert_eq!(parse_npt("1:02:03"), Some(Duration::from_secs(3723)));
+    assert_eq!(parse_npt("3600"), Some(Duration::from_secs(3600)));
 }
 
 // Test various forms of email and names in a string
@@ -84,6 +110,13 @@ fn test_parse_person_name_email() {
             Some("Simon St.Laurent"),
             Some("simonstl@simonstl.com"),
         ),
+        // Regression (C2): multi-byte characters next to the email made slicing panic
+        ("Name Here\u{00A0}a@b.com", Some("Name Here"), Some("a@b.com")),
+        ("a@b.com\u{00A0}Name Here", Some("Name Here"), Some("a@b.com")),
+        ("名前 太郎 <taro@example.jp>", Some("名前 太郎"), Some("taro@example.jp")),
+        ("taro@example.jp\u{3000}名前 太郎", Some("名前 太郎"), Some("taro@example.jp")),
+        ("🎙️ Host 🎙️(host@example.com)", Some("🎙️ Host 🎙️"), Some("host@example.com")),
+        ("Ünïcødé a@b.com", Some("Ünïcødé"), Some("a@b.com")),
     ];
 
     for (raw, expected_name, expected_email) in tests {
@@ -95,4 +128,35 @@ fn test_parse_person_name_email() {
         let expected_email = expected_email.map(|s| s.to_owned());
         assert_eq!(person.email, expected_email, "incorrect email for {}", raw);
     }
+}
+
+// Q8: well-formed timestamps take the strict fast path, and the result matches the lenient path
+#[test]
+fn test_timestamp_strict_and_lenient_agree() {
+    for (input, expected) in [
+        ("2017-05-17T08:02:12-07:00", "2017-05-17T15:02:12Z"),
+        ("2017-05-17T08:02:12.123Z", "2017-05-17T08:02:12.123Z"),
+        ("  2017-05-17T08:02:12Z  ", "2017-05-17T08:02:12Z"),
+        ("Tue, 15 Nov 2022 20:15:04 +0000", "2022-11-15T20:15:04Z"),
+        ("Tue, 15 Nov 2022 20:15:04 GMT", "2022-11-15T20:15:04Z"),
+        // These need the clean-up regexes
+        ("2017-05-17T08:02:12-0700", "2017-05-17T15:02:12Z"),
+        ("2017-05-17", "2017-05-17T00:00:00Z"),
+        ("Tuesday, 15 November 2022 20:15:04 UTC", "2022-11-15T20:15:04Z"),
+        ("Wed, 15 Nov 2022 20:15:04 +0000", "2022-11-15T20:15:04Z"),
+        ("Nov 15 2022 9:15:04 +0000", "2022-11-15T09:15:04Z"),
+    ] {
+        let parsed = parse_timestamp_lenient(input).unwrap_or_else(|| panic!("failed to parse {input:?}"));
+        assert_eq!(parsed, expected.parse::<DateTime<Utc>>().unwrap(), "{input}");
+    }
+    assert!(parse_timestamp_lenient("not a date").is_none());
+}
+
+#[test]
+fn test_apply_fixes_borrows_when_unchanged() {
+    assert!(matches!(
+        apply_fixes(" 2017-05-17T08:02:12Z ", fixes::rfc3339()),
+        Cow::Borrowed("2017-05-17T08:02:12Z")
+    ));
+    assert!(matches!(apply_fixes("2017-05-17", fixes::rfc3339()), Cow::Owned(_)));
 }

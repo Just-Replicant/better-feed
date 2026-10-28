@@ -1,16 +1,16 @@
 use std::io::BufRead;
 
 use crate::model::{Feed, FeedType};
-use crate::parser::{ParseFeedResult, Parser, rss2};
+use crate::parser::{EntrySink, ParseFeedResult, Parser, rss2};
 use crate::xml::Element;
 
 #[cfg(test)]
 mod tests;
 
 /// Parses an RSS 0.9x feed into our model
-pub(crate) fn parse<R: BufRead>(parser: &Parser, root: Element<R>) -> ParseFeedResult<Feed> {
+pub(crate) fn parse<R: BufRead>(parser: &Parser, root: Element<R>, sink: &mut EntrySink) -> ParseFeedResult<Feed> {
     // The 0.9x models are upward compatible with 2.x so we just delegate to that parser then set the correct type
-    rss2::parse(parser, root).map(|mut feed| {
+    rss2::parse(parser, root, sink).map(|mut feed| {
         feed.feed_type = FeedType::RSS0;
         feed
     })

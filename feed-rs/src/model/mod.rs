@@ -12,6 +12,9 @@ use url::Url;
 use crate::parser::util::parse_timestamp_lenient;
 use crate::parser::{ParseErrorKind, ParseFeedError, util};
 
+mod accessors;
+pub use accessors::{AlternateEnclosure, Chapters, Cloud, Funding, GeoPoint, Locked, Soundbite, Source, ValueBlock, ValueRecipient, ns};
+
 /// Combined model for a syndication feed (i.e. RSS1, RSS 2, Atom, JSON Feed)
 ///
 /// The model is based on the Atom standard as a start with RSS1+2 mapped on to it e.g.
@@ -30,7 +33,8 @@ use crate::parser::{ParseErrorKind, ParseFeedError, util};
 /// [iTunes podcast guide]: https://www.feedforall.com/itune-tutorial-tags.htm
 ///
 /// Elements without a dedicated field are kept on [`Feed::extensions`] or [`Entry::extensions`].
-#[derive(Clone, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[non_exhaustive]
 pub struct Feed {
     /// Type of this feed (e.g. RSS2, Atom etc)
     pub feed_type: FeedType,
@@ -97,6 +101,11 @@ pub struct Feed {
     pub rights: Option<Text>,
     /// RSS 2 (optional): It's a number of minutes that indicates how long a channel can be cached before refreshing from the source.
     pub ttl: Option<u32>,
+    /// JSON Feed (optional): `true` when the feed will not be updated again.
+    ///
+    /// Absent (`None`) when the feed did not say. A value that is not a boolean is left on [`Feed::extensions`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expired: Option<bool>,
     /// Podcast: People associated with this channel
     pub people: Vec<PodcastPerson>,
 
@@ -110,7 +119,11 @@ pub struct Feed {
 }
 
 impl Feed {
-    pub(crate) fn new(feed_type: FeedType) -> Self {
+    /// Creates an empty feed of the given type.
+    ///
+    /// `Feed` is `#[non_exhaustive]`, so this (followed by setting fields) is how code outside this crate builds one,
+    /// e.g. in tests or when converting from another model.
+    pub fn new(feed_type: FeedType) -> Self {
         Feed {
             feed_type,
             id: "".into(),
@@ -129,6 +142,7 @@ impl Feed {
             rating: None,
             rights: None,
             ttl: None,
+            expired: None,
             people: Vec::new(),
             entries: Vec::new(),
             extensions: Vec::new(),
@@ -136,9 +150,20 @@ impl Feed {
     }
 }
 
-impl Debug for Feed {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
-        f.write_str(serde_json::to_string(self).unwrap().as_str())
+impl Feed {
+    /// Serialises this feed to compact JSON (the same representation used by the crate's snapshot tests).
+    ///
+    /// ```
+    /// let feed = better_feed::parser::parse(r#"<rss version="2.0"><channel><title>t</title></channel></rss>"#.as_bytes()).unwrap();
+    /// assert!(feed.to_json().unwrap().contains(r#""feed_type":"RSS2""#));
+    /// ```
+    pub fn to_json(&self) -> serde_json::Result<String> {
+        serde_json::to_string(self)
+    }
+
+    /// Serialises this feed to indented, human-readable JSON.
+    pub fn to_json_pretty(&self) -> serde_json::Result<String> {
+        serde_json::to_string_pretty(self)
     }
 }
 
@@ -232,6 +257,7 @@ impl Feed {
 
 /// Type of feed (RSS, Atom etc)
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[non_exhaustive]
 pub enum FeedType {
     Atom,
     JSON,
@@ -242,6 +268,7 @@ pub enum FeedType {
 
 /// An item within a feed
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[non_exhaustive]
 pub struct Entry {
     /// A unique identifier for this item with a feed. If not supplied it is initialised to a hash of the first link or a UUID if not available.
     /// * Atom (required): Identifies the entry using a universally unique and permanent URI.
@@ -343,27 +370,134 @@ impl Default for Entry {
     }
 }
 
-/// An element that has no dedicated field on [`Feed`] or [`Entry`].
+/// An element (or JSON property) that has no dedicated field on [`Feed`] or [`Entry`].
 ///
-/// `namespace` is the XML namespace URI. JSON Feed leftovers use `https://jsonfeed.org`.
+/// For XML feeds:
+/// * `namespace` is the namespace URI the element is bound to (if any) and `prefix` the prefix used in the document
+/// * `name` is the local name (without prefix)
+/// * `text` is the (trimmed) text before the first child element, and each child's `tail` is the (trimmed) text
+///   that follows it, so mixed content can be reassembled in document order
+/// * deeply nested children and very long text are cut off according to [`crate::parser::ParseLimits`]
+///
+/// For JSON Feed, unmapped properties use the namespace `https://jsonfeed.org` and `value` holds the raw JSON value
+/// (lossless), while `text` / `children` give a simplified view (arrays of scalars are joined with `", "`).
+///
+/// Extension text is not sanitised by [`crate::parser::Builder::sanitize_content`]; enable
+/// [`crate::parser::Builder::sanitize_extensions`] as well if it may be rendered as HTML.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[non_exhaustive]
 pub struct Extension {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub namespace: Option<String>,
+    /// The namespace prefix used in the source document (XML only)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prefix: Option<String>,
     pub name: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attributes: Vec<ExtensionAttribute>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
+    /// Text following this element within its parent (XML mixed content)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tail: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub children: Vec<Extension>,
+    /// The raw JSON value (JSON Feed only)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<Value>,
+}
+
+impl Extension {
+    /// Sanitises the text (and tail) of this extension and all its children as HTML.
+    /// Has no effect unless the `sanitize` feature is enabled.
+    pub fn sanitize(&mut self) {
+        #[cfg(feature = "sanitize")]
+        {
+            let mut stack = vec![self];
+            while let Some(extension) = stack.pop() {
+                for text in [extension.text.as_mut(), extension.tail.as_mut()].into_iter().flatten() {
+                    *text = ammonia::clean(text);
+                }
+                stack.extend(extension.children.iter_mut());
+            }
+        }
+    }
+
+    /// Creates an extension with the given namespace, local name and text
+    pub fn named(namespace: Option<&str>, name: &str, text: Option<String>) -> Extension {
+        Extension {
+            namespace: namespace.map(str::to_owned),
+            prefix: None,
+            name: name.to_owned(),
+            attributes: Vec::new(),
+            text,
+            tail: None,
+            children: Vec::new(),
+            value: None,
+        }
+    }
+
+    /// Returns true if this extension has the given namespace URI and local name
+    pub fn is(&self, namespace: Option<&str>, name: &str) -> bool {
+        self.namespace.as_deref() == namespace && self.name == name
+    }
+
+    /// Value of the attribute with the given local name (any namespace)
+    pub fn attr(&self, name: &str) -> Option<&str> {
+        self.attributes.iter().find(|a| a.name == name).map(|a| a.value.as_str())
+    }
+
+    /// Value of the attribute with the given namespace URI and local name
+    pub fn attr_ns(&self, namespace: Option<&str>, name: &str) -> Option<&str> {
+        self.attributes
+            .iter()
+            .find(|a| a.name == name && a.namespace.as_deref() == namespace)
+            .map(|a| a.value.as_str())
+    }
+
+    /// The first child with the given namespace URI and local name
+    pub fn child(&self, namespace: Option<&str>, name: &str) -> Option<&Extension> {
+        self.children.iter().find(|c| c.is(namespace, name))
+    }
+
+    /// All children with the given namespace URI and local name
+    pub fn children_named<'a>(&'a self, namespace: Option<&'a str>, name: &'a str) -> impl Iterator<Item = &'a Extension> + 'a {
+        self.children.iter().filter(move |c| c.is(namespace, name))
+    }
+
+    /// The text of this element and all of its descendants in document order, joined by single spaces
+    pub fn all_text(&self) -> String {
+        let mut parts = Vec::new();
+        collect_text(self, &mut parts);
+        parts.join(" ")
+    }
+}
+
+fn collect_text<'a>(extension: &'a Extension, parts: &mut Vec<&'a str>) {
+    if let Some(text) = &extension.text {
+        parts.push(text);
+    }
+    for child in &extension.children {
+        collect_text(child, parts);
+        if let Some(tail) = &child.tail {
+            parts.push(tail);
+        }
+    }
 }
 
 /// One attribute on an [`Extension`].
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[non_exhaustive]
 pub struct ExtensionAttribute {
+    /// Local name of the attribute (without prefix)
     pub name: String,
     pub value: String,
+    /// The namespace prefix used in the source document, if any (e.g. `xml` for `xml:lang`)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prefix: Option<String>,
+    /// The namespace URI of a prefixed attribute
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub namespace: Option<String>,
 }
 
 #[cfg(test)]
@@ -599,7 +733,11 @@ impl Generator {
     }
 }
 
-/// Represents a a link to an image.
+/// Represents a link to an image.
+///
+/// `title` and `description` are plain text (an RSS image uses them as the alt and title of the rendered
+/// `<img>`). They are not HTML, so the sanitiser does not touch them: running them through ammonia would turn
+/// characters such as `&` into entities and change the text.
 ///
 /// [Atom spec]:  http://www.atomenabled.org/developers/syndication/#optionalFeedElements
 /// [RSS 2 spec]: https://validator.w3.org/feed/docs/rss2.html#ltimagegtSubelementOfLtchannelgt
@@ -748,11 +886,9 @@ impl Link {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum LinkTarget {
     /// A link to comments, likely an HTML anchor to the corresponding section of a page
-    /// [RSS 2.0 standard]: https://www.rssboard.org/rss-specification#ltcommentsgtSubelementOfLtitemgt
+    /// (see the [RSS 2.0 standard](https://www.rssboard.org/rss-specification#ltcommentsgtSubelementOfLtitemgt))
     Comments,
-    /// Link to the comments RSS feed
-    /// [Comment API NS]: https://www.rssboard.org/comment-api
-    ///
+    /// Link to the comments RSS feed (see the [Comment API namespace](https://www.rssboard.org/comment-api))
     CommentsFeed,
 }
 
@@ -791,9 +927,31 @@ pub struct MediaObject {
 }
 
 impl MediaObject {
+    /// Sanitises the title, description and texts of this media object (see [`Text::sanitize`]).
+    /// Has no effect unless the `sanitize` feature is enabled.
+    pub fn sanitize(&mut self) {
+        for text in [self.title.as_mut(), self.description.as_mut()].into_iter().flatten() {
+            text.sanitize();
+        }
+        for media_text in self.texts.iter_mut() {
+            media_text.text.sanitize();
+        }
+    }
+
     // Checks if this object has been populated with any content (e.g. iTunes, Podcast etc.)
     pub(crate) fn is_not_empty(&self) -> bool {
-        self.title.is_some() || self.description.is_some() || !self.content.is_empty() || !self.texts.is_empty() || !self.transcripts.is_empty()
+        self.title.is_some()
+            || self.description.is_some()
+            || !self.content.is_empty()
+            || !self.texts.is_empty()
+            || !self.transcripts.is_empty()
+            || self.duration.is_some()
+            || !self.thumbnails.is_empty()
+            || !self.credits.is_empty()
+            || self.community.is_some()
+            || !self.people.is_empty()
+            || self.season.is_some()
+            || self.episode.is_some()
     }
 
     // Creates a new instance with the nominated source
@@ -1109,7 +1267,7 @@ pub struct PodcastPerson {
     pub href: Option<Url>,
 }
 
-/// Represents a [`PodcastPerson`](PodcastPerson)'s role.
+/// Represents a [`PodcastPerson`]'s role.
 ///
 /// See the [taxonomy](https://github.com/Podcastindex-org/podcast-namespace/blob/main/taxonomy.json)
 /// for a list of roles and their associated groups.
@@ -1363,7 +1521,7 @@ impl Role {
     }
 }
 
-/// Represents a [`PodcastPerson`](PodcastPerson)'s group.
+/// Represents a [`PodcastPerson`]'s group.
 ///
 /// See the [taxonomy](https://github.com/Podcastindex-org/podcast-namespace/blob/main/taxonomy.json)
 /// for a list of groups.
@@ -1398,7 +1556,7 @@ impl Group {
             "Cast" => Ok(Group::Cast),
             "Community" => Ok(Group::Community),
             "Creative Direction" => Ok(Group::CreativeDirection),
-            "Misc" => Ok(Group::Misc),
+            "Misc" | "Misc." => Ok(Group::Misc),
             "Video Post-Production" => Ok(Group::VideoPostProduction),
             "Video Production" => Ok(Group::VideoProduction),
             "Visuals" => Ok(Group::Visuals),
@@ -1423,7 +1581,7 @@ pub struct Transcript {
     pub rel: Option<String>,
 }
 
-/// Represents a podcast episode's season number. Used in tandem with the [`Episode`](Episode) number.
+/// Represents a podcast episode's season number. Used in tandem with the [`Episode`] number.
 ///
 /// See [the spec](https://podcastindex.org/namespace/1.0#season).
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1432,7 +1590,7 @@ pub struct Season {
     pub number: u32,
 }
 
-/// Represents a podcast episode's episode number. Used in tandem with the [`Season`](Season) number.
+/// Represents a podcast episode's episode number. Used in tandem with the [`Season`] number.
 ///
 /// See [the spec](https://podcastindex.org/namespace/1.0#episode).
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -1450,7 +1608,8 @@ pub struct Text {
 }
 
 impl Text {
-    pub(crate) fn new(content: String) -> Text {
+    /// Creates plain text (`text/plain`) content, trimming surrounding whitespace.
+    pub fn new(content: String) -> Text {
         Text {
             content_type: MediaTypeBuf::new(names::TEXT, names::PLAIN),
             src: None,
@@ -1458,7 +1617,8 @@ impl Text {
         }
     }
 
-    pub(crate) fn html(content: String) -> Text {
+    /// Creates HTML (`text/html`) content, trimming surrounding whitespace.
+    pub fn html(content: String) -> Text {
         Text {
             content_type: MediaTypeBuf::new(names::TEXT, names::HTML),
             src: None,

@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::io::BufRead;
 use std::mem;
 use std::time::Duration;
@@ -13,8 +12,13 @@ use crate::parser::util::{if_ok_then_some, if_some_then, parse_npt};
 use crate::parser::{ParseErrorKind, ParseFeedError, ParseFeedResult, util};
 use crate::xml::{Element, NS};
 
+/// Collects MediaRSS elements while a single entry is parsed.
+///
+/// A fresh instance is created for each entry, so a parse error part-way through an entry
+/// cannot leave stale state behind (which previously made the next parse with the same
+/// `Parser` panic), and `Parser` itself holds no interior mutability (so it is `Sync`).
 pub(crate) struct MediaRssState {
-    root: RefCell<Option<Scope>>,
+    root: Scope,
 }
 
 #[derive(Default)]
@@ -37,39 +41,19 @@ struct Scope {
 }
 
 impl MediaRssState {
-    /// Initialise parsing for this entry
-    pub(crate) fn entry_begin(&self) {
-        // We should not have a scope at this point, since all entries are parsed separately and no media RSS elements are processed at the feed level
-        assert!(self.root.borrow().is_none());
-
-        // Initialise the scope
-        self.root.borrow_mut().replace(Scope::default());
+    /// Initialise parsing for a new entry
+    pub(crate) fn new() -> MediaRssState {
+        MediaRssState { root: Scope::default() }
     }
 
-    pub(crate) fn entry_end(&self, entry: &mut Entry) {
-        // Emit media objects as required
-        let scope = self.root.replace(None).unwrap();
-        emit_media_objects(scope, entry);
+    /// Emit the media objects collected for this entry
+    pub(crate) fn finish(self, entry: &mut Entry) {
+        emit_media_objects(self.root, entry);
     }
 
     /// Handle a primary or scoped optional MediaRSS element at the entry level
-    pub(crate) fn handle_entry_mediarss_element<R: BufRead>(&self, element: Element<R>) -> ParseFeedResult<()> {
-        // We will parse this element into the top-level scope
-        if let Some(scope) = self.root.borrow_mut().as_mut() {
-            // Pass off to the inner handle to process the element
-            inner_handle_mediarss_element(element, scope)?;
-
-            Ok(())
-        } else {
-            Err(ParseFeedError::ParseError(ParseErrorKind::IllegalState {
-                position: element.buffer_pos,
-                reference: "scope was not setup during mediarss entry parsing".to_string(),
-            }))
-        }
-    }
-
-    pub(crate) fn new() -> MediaRssState {
-        MediaRssState { root: RefCell::new(None) }
+    pub(crate) fn handle_entry_mediarss_element<R: BufRead>(&mut self, element: Element<R>) -> ParseFeedResult<()> {
+        inner_handle_mediarss_element(element, &mut self.root)
     }
 }
 
@@ -84,7 +68,6 @@ fn emit_media_objects(mut scope: Scope, entry: &mut Entry) {
         media_obj.description = scope.description.clone();
         media_obj.thumbnails = scope.thumbnails.clone();
         media_obj.community = scope.community.clone();
-        media_obj.thumbnails = scope.thumbnails.clone();
         media_obj.texts = scope.texts.clone();
         media_obj.credits = scope.credits.clone();
 
@@ -147,7 +130,7 @@ fn inner_handle_mediarss_element<R: BufRead>(element: Element<R>, scope: &mut Sc
 
             (NS::MediaRSS, "rating") => scope.rating = handle_media_rating(element),
 
-            _ => scope.extensions.push(capture(element)?),
+            _ => scope.extensions.extend(capture(element)?),
         }
     }
 

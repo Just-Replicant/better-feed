@@ -1,21 +1,12 @@
-use std::io::{self, BufRead};
+//! Reads feed URLs from stdin (one per line), fetches and parses each one, and prints a summary.
+//!
+//! Blank lines and lines starting with `#` are ignored. A failure for one URL (network error, HTTP error status or
+//! parse error) is reported and the run continues; the process exits with status 1 if any URL failed.
+//! Equivalent to `better-feed check`.
 
-use better_feed::parser;
+use std::io;
+use std::process::ExitCode;
 
-// Fetch each URL and try to parse it
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let stdin = io::stdin();
-    for line in stdin.lock().lines() {
-        let line = line?;
-        print!("{}  ... ", line);
-        let xml = reqwest::blocking::get(&line)?.bytes()?;
-
-        let parser = parser::Builder::new().base_uri(Some(&line)).build();
-        match parser.parse(xml.as_ref()) {
-            Ok(_feed) => println!("ok"),
-            Err(error) => println!("failed: {:?}\n{:?}\n-------------------------------------------------------------", error, xml),
-        }
-    }
-
-    Ok(())
+fn main() -> ExitCode {
+    tools::check_urls(io::stdin().lock())
 }

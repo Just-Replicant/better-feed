@@ -2,13 +2,14 @@
 name = "better-feed"
 version = "3.0.1"
 edition = '2024'
+rust-version = "1.89"
 authors = ["Mark Pritchard <mpritcha@gmail.com>"]
 include = [
     "**/*.rs",
     "Cargo.toml",
     "LICENSE-MIT",
     "README.md",
-    "fixture/*"
+    "CHANGELOG.md",
 ]
 license = "MIT"
 homepage = "https://github.com/Just-Replicant/better-feed"
@@ -32,3 +33,11 @@ uuid = { version = "1.26.1", features = ["v4"] }
 
 [features]
 sanitize = ["dep:ammonia"]
+
+[dev-dependencies]
+criterion = { version = "0.7", default-features = false, features = ["cargo_bench_support"] }
+proptest = "1.5"
+
+[[bench]]
+name = "parse"
+harness = false

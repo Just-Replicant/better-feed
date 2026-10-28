@@ -30,7 +30,7 @@ pub(crate) fn handle_itunes_channel_element<R: BufRead>(element: Element<R>, fee
         (NS::Itunes, "author") => if_some_then(element.child_as_text(), |person| feed.authors.push(Person::parse(&person).role("author"))),
         (NS::Itunes, "owner") => if_some_then(handle_owner(element)?, |owner| feed.contributors.push(owner)),
 
-        _ => feed.extensions.push(capture(element)?),
+        _ => feed.extensions.extend(capture(element)?),
     }
 
     Ok(())
@@ -53,7 +53,7 @@ pub(crate) fn handle_itunes_item_element<R: BufRead>(element: Element<R>, media_
 
         (NS::Itunes, "season") => if_some_then(common::handle_season(element), |season| media_obj.season = Some(season)),
 
-        _ => extensions.push(capture(element)?),
+        _ => extensions.extend(capture(element)?),
     }
 
     Ok(())

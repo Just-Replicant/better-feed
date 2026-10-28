@@ -975,7 +975,7 @@ fn test_volpeon_hybrid_rss_atom() {
 
     // And we should have extracted the updated date for the entries
     let entry0 = &actual.entries[0];
-    assert_eq!(entry0.updated, Some(Utc.with_ymd_and_hms(2025, 03, 29, 0, 0, 0).unwrap()));
+    assert_eq!(entry0.updated, Some(Utc.with_ymd_and_hms(2025, 3, 29, 0, 0, 0).unwrap()));
     let entry1 = &actual.entries[1];
     assert_eq!(entry1.updated, Some(Utc.with_ymd_and_hms(2024, 7, 1, 0, 0, 0).unwrap()));
 }

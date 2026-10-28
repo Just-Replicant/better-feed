@@ -1,11 +1,17 @@
 [package]
 name = "tools"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
+rust-version = "1.89"
 authors = ["Mark Pritchard <mpritcha@gmail.com>"]
-publish = true
+publish = false
+license = "MIT"
 
 [dependencies]
 better-feed = { path = "../feed-rs" }
 reqwest = { version = "0.13.5", features = ["blocking"] }
 serde_json = "1.0.151"
+
+[features]
+# Sanitise HTML in the better-feed CLI (not on by default so workspace builds keep better-feed's own defaults)
+sanitize = ["better-feed/sanitize"]

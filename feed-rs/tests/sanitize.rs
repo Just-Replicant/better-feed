@@ -47,7 +47,7 @@ fn test_sanitize_atom_plain_text() {
     assert_eq!(feed_description.content_type.as_str(), "text/plain");
     assert_eq!(feed_title.content, r#"<script>title</script>"#);
     assert_eq!(feed_title.content_type.as_str(), "text/plain");
-    assert_eq!(feed_author.name, r#"Erika <tag /> Mustermann"#);
+    assert_eq!(feed_author.name.as_deref(), Some(r#"Erika <tag /> Mustermann"#));
 
     assert_eq!(entry_title.content, "<script>alert('xyzzy');</script>title");
     assert_eq!(entry_title.content_type.as_str(), "text/plain");
@@ -196,7 +196,7 @@ fn test_sanitize_rss1() {
 </rdf:RDF>
 "#;
     let feed = parser::parse(source.as_bytes()).unwrap();
-    println!("{:?}", &feed);
+    println!("{:?}", feed);
     let feed_title = feed.title.unwrap();
 
     let entry = feed.entries[0].clone();
@@ -235,7 +235,7 @@ fn test_sanitize_json() {
     ]
 }"#;
     let feed = parser::parse(source.as_bytes()).unwrap();
-    println!("{:?}", &feed);
+    println!("{:?}", feed);
 
     let entry = feed.entries[0].clone();
     let entry_summary = entry.summary.unwrap();
@@ -245,4 +245,37 @@ fn test_sanitize_json() {
     assert_eq!(entry_summary.content_type.as_str(), "text/plain");
     assert_eq!(entry_content.body.unwrap(), "<p>Hello, world!</p>");
     assert_eq!(entry_content.content_type.as_str(), "text/html");
+}
+
+// Regression (C7): media descriptions/titles/texts were not sanitised, and extensions are only
+// sanitised when explicitly requested
+#[test]
+#[cfg(feature = "sanitize")]
+fn test_sanitize_media_and_extensions() {
+    let source = r#"<rss version="2.0" xmlns:x="urn:x" xmlns:media="http://search.yahoo.com/mrss/"><channel><title>t</title>
+        <x:feedhtml>&lt;script&gt;alert(0)&lt;/script&gt;ok</x:feedhtml>
+        <item><title>a</title>
+        <x:html>&lt;script&gt;alert(1)&lt;/script&gt;fine<x:child>&lt;img src=x onerror=alert(3)&gt;</x:child></x:html>
+        <media:title type="html">&lt;script&gt;t&lt;/script&gt;Title</media:title>
+        <media:description type="html">&lt;script&gt;alert(2)&lt;/script&gt;Desc</media:description>
+        <media:text type="html">&lt;script&gt;x&lt;/script&gt;Text</media:text>
+        <media:content url="http://a/b.mp4"/>
+        </item></channel></rss>"#;
+
+    // Default: media is sanitised, extensions are left raw
+    let feed = parser::parse(source.as_bytes()).unwrap();
+    let entry = &feed.entries[0];
+    let media = &entry.media[0];
+    assert_eq!(media.title.as_ref().unwrap().content, "Title");
+    assert_eq!(media.description.as_ref().unwrap().content, "Desc");
+    assert_eq!(media.texts[0].text.content, "Text");
+    assert_eq!(entry.extensions[0].text.as_deref(), Some("<script>alert(1)</script>fine"));
+
+    // Opt-in: extensions (including nested children and feed-level ones) are sanitised too
+    let parser = parser::Builder::new().sanitize_extensions(true).build();
+    let feed = parser.parse(source.as_bytes()).unwrap();
+    let html = &feed.entries[0].extensions[0];
+    assert_eq!(html.text.as_deref(), Some("fine"));
+    assert_eq!(html.children[0].text.as_deref(), Some(r#"<img src="x">"#));
+    assert_eq!(feed.extensions[0].text.as_deref(), Some("ok"));
 }

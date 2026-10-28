@@ -14,7 +14,8 @@ cargo test --workspace --all-features     # includes the `sanitize` feature
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features
 ```
 
-The minimum supported Rust version is 1.89 (`rust-version` in `feed-rs/Cargo.toml`); CI tests it.
+The minimum supported Rust version is 1.89 (`rust-version` in `feed-rs/Cargo.toml`); CI tests it. CI also runs
+`cargo deny check --all-features` (advisories, licences and crate sources, configured in `deny.toml`).
 
 ## Tests and fixtures
 

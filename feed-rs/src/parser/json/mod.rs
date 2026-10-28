@@ -63,6 +63,9 @@ fn convert(parser: &Parser, jf: JsonFeed, sink: &mut EntrySink) -> ParseFeedResu
         })
     });
 
+    let mut extensions = jf.extensions;
+    feed.expired = take_expired(&mut extensions);
+
     if_some_then(jf.description, |text| feed.description = Some(Text::new(text)));
 
     if_some_then(jf.icon, |uri| feed.logo = Some(Image::new(ctx.uri(uri))));
@@ -73,7 +76,7 @@ fn convert(parser: &Parser, jf: JsonFeed, sink: &mut EntrySink) -> ParseFeedResu
 
     handle_authors(&ctx, &mut feed.authors, &jf.author, &jf.authors);
 
-    feed.extensions = from_json(jf.extensions, &ctx.capture);
+    feed.extensions = from_json(extensions, &ctx.capture);
 
     // Convert items within the JSON feed
     for ji in jf.items {
@@ -288,6 +291,28 @@ struct JsonItem {
     pub attachments: Option<Vec<JsonAttachment>>,
     #[serde(default, flatten)]
     extensions: Map<String, Value>,
+}
+
+// JSON Feed `expired` is a boolean. A recognised value is mapped onto the model; anything else is put back
+// so it stays an extension and one odd value cannot fail the feed.
+fn take_expired(extensions: &mut Map<String, Value>) -> Option<bool> {
+    let value = extensions.remove("expired")?;
+    let flag = match &value {
+        Value::Bool(flag) => Some(*flag),
+        Value::String(text) => match text.trim().to_ascii_lowercase().as_str() {
+            "true" | "yes" => Some(true),
+            "false" | "no" => Some(false),
+            _ => None,
+        },
+        _ => None,
+    };
+    match flag {
+        Some(flag) => Some(flag),
+        None => {
+            extensions.insert("expired".into(), value);
+            None
+        }
+    }
 }
 
 // Accepts a string or a number (converted to its string form) for an optional field

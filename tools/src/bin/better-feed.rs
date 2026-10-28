@@ -23,6 +23,7 @@ Parse output (default: a short summary):
   --json            The parsed model as JSON
   --pretty          Indent JSON output
   --atom            Re-serialise as Atom 1.0
+  --rss             Re-serialise as RSS 2.0
   --json-feed       Re-serialise as JSON Feed 1.1
   --stream          Print each entry as soon as it is parsed (summary output only)
 
@@ -38,6 +39,7 @@ enum Output {
     Summary,
     Json,
     Atom,
+    Rss,
     JsonFeed,
 }
 
@@ -61,6 +63,7 @@ fn parse_args(args: &[String]) -> Result<ParseArgs, String> {
         match arg.as_str() {
             "--json" => parsed.output = Output::Json,
             "--atom" => parsed.output = Output::Atom,
+            "--rss" => parsed.output = Output::Rss,
             "--json-feed" => parsed.output = Output::JsonFeed,
             "--pretty" => parsed.pretty = true,
             "--stream" => parsed.stream = true,
@@ -137,6 +140,7 @@ fn run_parse(args: ParseArgs) -> Result<(), String> {
         Output::Json if args.pretty => json(feed.to_json_pretty())?,
         Output::Json => json(feed.to_json())?,
         Output::Atom => writer::to_atom(&feed),
+        Output::Rss => writer::to_rss(&feed),
         Output::JsonFeed if args.pretty => json(writer::to_json_feed_pretty(&feed))?,
         Output::JsonFeed => json(writer::to_json_feed(&feed))?,
     };
@@ -193,5 +197,6 @@ mod tests {
         assert!(parse_args(&args("a --bogus")).is_err());
         assert!(parse_args(&args("a --base")).is_err());
         assert!(parse_args(&args("a --stream --atom")).is_err());
+        assert_eq!(parse_args(&args("a.xml --rss")).unwrap().output, Output::Rss);
     }
 }

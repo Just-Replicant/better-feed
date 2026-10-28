@@ -208,7 +208,7 @@ pub struct Parser {
     sanitize_extensions: bool,
     capture_extensions: bool,
     limits: ParseLimits,
-    /// Unknown podcast:person role or group fails the parse instead of being kept as an extension
+    /// Unknown `podcast:person` role or group fails the parse instead of being kept as an extension
     strict: bool,
     timestamp_parser: Box<TimestampParser>,
 }
@@ -250,10 +250,11 @@ impl Parser {
 
     /// Parses the source, handing each entry to `on_entry` as soon as it has been parsed instead of collecting them.
     ///
-    /// This keeps memory bounded by the largest single entry rather than the whole feed, and lets the caller stop early
-    /// by returning [`ControlFlow::Break`] (the rest of the input is then not read). Each entry has already had its id
-    /// generated and been sanitised (as configured), exactly as with [`Parser::parse`]; for JSON Feed, entries without
-    /// authors inherit the feed authors as usual.
+    /// For XML, memory stays bounded by the largest single entry rather than the whole feed. JSON Feed is read by serde
+    /// into a document first, so a large JSON feed is fully buffered; the callback still receives items one at a time.
+    /// Return [`ControlFlow::Break`] to stop early (the rest of the input is then not read). Each entry has already had
+    /// its id generated and been sanitised (as configured), exactly as with [`Parser::parse`]; for JSON Feed, entries
+    /// without authors inherit the feed authors as usual.
     ///
     /// Returns the feed-level metadata seen while parsing, with `entries` empty. Feed elements that appear after the
     /// point where parsing stopped are not included.
@@ -543,9 +544,9 @@ impl Builder {
         self
     }
 
-    /// Reject the feed when a podcast:person role or group is not in the Podcasting 2.0 taxonomy (default alse).
+    /// Reject the feed when a `podcast:person` role or group is not in the Podcasting 2.0 taxonomy (default `false`).
     ///
-    /// By default that element is kept as an extension and the rest of the feed is parsed. 	rue restores the
+    /// By default that element is kept as an extension and the rest of the feed is parsed. `true` restores the
     /// earlier behaviour of failing the whole feed on the first unknown value.
     pub fn strict(mut self, flag: bool) -> Self {
         self.strict = flag;

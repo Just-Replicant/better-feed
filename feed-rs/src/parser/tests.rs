@@ -435,6 +435,12 @@ fn large_leading_whitespace_is_skipped() {
     assert_eq!(parser::parse(json.as_bytes()).unwrap().title.unwrap().content, "j");
 
     assert!(parser::parse(" ".repeat(20_000).as_bytes()).is_err());
+
+    // A UTF-8 BOM plus more whitespace than one buffer must not hide the root
+    let mut bom = String::from("\u{feff}");
+    bom.push_str(&" ".repeat(10_000));
+    bom.push_str(r#"<rss version="2.0"><channel><title>bom</title></channel></rss>"#);
+    assert_eq!(parser::parse(bom.as_bytes()).unwrap().title.unwrap().content, "bom");
 }
 
 // Regression (B11): RSS image sizes above the spec maxima (144 x 400) were silently discarded

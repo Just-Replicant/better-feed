@@ -77,7 +77,8 @@
 //! `sanitize` cargo feature; without it sanitisation is a no-op (see [`parser::SANITIZE_AVAILABLE`]).
 //! When the feature is enabled, sanitisation is **on by default** for HTML content and media text; it can be turned off
 //! with [`parser::Builder::sanitize_content`], and extended to captured extensions with
-//! [`parser::Builder::sanitize_extensions`]. `text/plain` fields are never modified.
+//! [`parser::Builder::sanitize_extensions`]. `text/plain` fields are never modified, including RSS image titles and
+//! descriptions (they are alt and title text, not HTML).
 //!
 //! ```toml
 //! better-feed = { version = "3", features = ["sanitize"] }

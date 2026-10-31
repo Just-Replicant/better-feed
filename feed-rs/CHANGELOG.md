@@ -7,6 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.0](https://github.com/Just-Replicant/better-feed/compare/v3.0.1...v4.0.0) - 2026-10-28
+
+### Added
+
+- *(writer)* RSS 2.0 output plus media and extension serialisation
+- *(parser)* pass Parser::strict into RSS 2.0 podcast handlers
+- *(parser)* honour strict in podcast:person handling
+- *(parser)* add Builder::strict for podcast person taxonomy
+- *(parser)* map JSON Feed expired onto Feed::expired
+- *(model)* add Feed::json_user_comment accessor
+- *(model)* add Feed::expired for JSON Feed
+- *(model)* typed podcast:alternateEnclosure accessor (F2)
+- *(parser)* ParseLimits::max_entries (Q2, F3)
+- *(writer)* serialise feeds as Atom 1.0 and JSON Feed 1.1 (F7)
+- *(parser)* streaming Parser::parse_with callback API (F6)
+- *(model)* extension lookups, namespace constants and typed extension views (F1, F2)
+- *(api)* [**breaking**] mark core types #[non_exhaustive] and expose constructors (Q3)
+- *(model)* [**breaking**] derive Debug for Feed and add to_json()/to_json_pretty() (Q7)
+- *(extensions)* [**breaking**] iterative, bounded and optional extension capture; lossless model (C1, Q2, F3, B8)
+
+### Fixed
+
+- *(parser)* skip a leading UTF-8 BOM when sniffing format
+- *(xml)* no panic on late or over-long XML declarations (found by fuzzing)
+- *(rss2)* keep image width/height larger than the spec maxima (B11)
+- *(podcast)* unknown podcast:person role or group no longer fails the feed (B7)
+- *(json)* [**breaking**] numeric ids, relative URLs and missing JSON Feed fields (B6)
+- *(parser)* lenient RSS versions, real root errors, sniff past 8 KiB (B3, B4, B5)
+- *(model)* keep iTunes-only media metadata (B1)
+- *(sanitize)* sanitise media text and optionally extensions (C7)
+- *(xml)* escape attribute values when re-serialising content (C5)
+- *(util)* parse durations without panics and support M:SS (C3, B2)
+- *(util)* no panic on multi-byte characters next to an email in person fields (C2)
+- *(parser)* scope MediaRSS state per entry so Parser is reusable and Sync (C4, Q1)
+
+### Other
+
+- *(changelog)* record closed partials and cargo-deny
+- *(feed-rs)* document RSS writer, strict and streaming notes
+- *(lib)* note sanitiser leaves RSS image text alone
+- *(writer)* JSON Feed writes expired extensions and banner
+- *(writer)* RSS round-trip keeps items media and extensions
+- *(test)* normalize blank line before rss_image_text_stays_plain
+- *(parser)* RSS image title and description stay plain text
+- *(parser)* UTF-8 BOM with large leading whitespace
+- *(parser)* note parse_with buffers JSON Feed fully
+- *(parser)* Builder::strict fails on unknown podcast role
+- *(parser)* cover JSON Feed expired and user_comment
+- *(model)* note Image title and description stay plain text
+- *(changelog)* note the XML declaration panic fix found by fuzzing
+- *(changelog)* document all changes since 3.0.1 and the fork history (Q3)
+- READMEs, root licence and contributing guide (D5)
+- criterion benchmarks (F5)
+- *(model)* rename Entry::source() accessor to rss_source() (F2)
+- stop shipping test fixtures in the published crate (D4)
+- modern GitHub Actions workflow, MSRV and committed lockfile (D1)
+- property tests and cargo-fuzz targets (Q5)
+- per-format extension capture tests (Q4)
+- fix rustdoc warnings and misleading sanitize docs (Q9)
+- *(util)* strict RFC 3339/2822 parse first, Cow-based clean-up (Q8)
+- *(mediarss)* remove duplicate thumbnails clone in emit_media_objects (B12)
+- fix sanitize feature tests and clippy errors in test code (C6)
+
 This release fixes several crashes on untrusted input and contains **breaking changes**; it should be released as
 4.0.0 (release-plz will propose the major bump from the `!` commits).
 
